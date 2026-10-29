@@ -1,114 +1,107 @@
-// The predefined catalog of mobile accessories.
+// Catalog persistence: the only module that talks to the `products` table.
 //
-// It lives in code rather than in the database: the list is curated, small, and
-// changes only when we deploy. That keeps price reports free of dangling links
-// and removes any need for a seeding step. `key` is the stable identifier that
-// `price_reports.product_key` stores — rename a key and old reports stop
-// resolving to a product, so treat keys as permanent.
-//
-// Prices are deliberately absent: every number the bot shows comes from a user
-// report, never from here.
+// The catalog is data, not code: it is seeded once by an administrator and then
+// queried by the bot. Seeding is idempotent because `products.normalized_name`
+// is UNIQUE — a second run conflicts and inserts nothing.
 
-import { normalizeSearchText } from './input.js';
+import { db } from 'sdk';
+import { and, asc, eq, like, or } from 'sdk/db';
+import { products } from '../schema.js';
+import { SEED_PRODUCTS, toProductRow } from './catalog-data.js';
+import { CATALOG_PAGE_SIZE, SEARCH } from './config.js';
+import { toPositiveInt } from './input.js';
+import { likePatterns, queryTokens, rankMatches } from './search.js';
 
-/** Category key → Persian label. Keys are stored nowhere; they are UI grouping. */
-export const CATEGORIES = {
-  charger: 'شارژر',
-  wireless: 'شارژر بی‌سیم',
-  cable: 'کابل',
-  powerbank: 'پاوربانک',
-  audio: 'هندزفری و هدفون',
-  speaker: 'اسپیکر',
-  case: 'قاب و کاور',
-  glass: 'گلس و محافظ صفحه',
-  adapter: 'مبدل و هاب',
-  holder: 'نگهدارنده',
-};
+// A batch insert is a single SQLite statement, so it is bounded by the variable
+// limit (rows × columns). Chunking keeps a growing catalog safe to seed.
+const SEED_CHUNK_SIZE = 25;
 
-const PRODUCTS = [
-  { key: 'apple-usb-c-20w', name: 'شارژر ۲۰ وات USB-C اپل', brand: 'Apple', category: 'charger', aliases: ['اپل ۲۰ وات'] },
-  { key: 'apple-usb-c-30w', name: 'شارژر ۳۰ وات USB-C اپل', brand: 'Apple', category: 'charger', aliases: ['اپل ۳۰ وات'] },
-  { key: 'samsung-25w-usb-c', name: 'شارژر ۲۵ وات USB-C سامسونگ', brand: 'Samsung', category: 'charger', aliases: ['سامسونگ ۲۵ وات'] },
-  { key: 'xiaomi-33w-fast', name: 'شارژر ۳۳ وات شیائومی', brand: 'Xiaomi', category: 'charger', aliases: ['شیائومی ۳۳ وات'] },
-  { key: 'anker-nano-30w', name: 'شارژر ۳۰ وات انکر Nano', brand: 'Anker', category: 'charger', aliases: ['انکر ۳۰ وات', 'انکر نانو'] },
-  { key: 'baseus-gan-65w', name: 'شارژر ۶۵ وات گن بیسوس', brand: 'Baseus', category: 'charger', aliases: ['بیسوس ۶۵ وات'] },
+/**
+ * Insert any catalog entry that is not in the database yet.
+ *
+ * Idempotent by construction: `onConflictDoNothing` on the UNIQUE normalized
+ * name means existing products are left untouched (no overwrite of a curated
+ * name, no duplicate), and only genuinely new entries are added.
+ *
+ * Intended to run as the admin `/seed` command after `npm run migrate` — never
+ * on a message, and never on module load.
+ */
+export async function seedCatalog(entries = SEED_PRODUCTS) {
+  const rows = entries.map(toProductRow);
+  const before = await db.$count(products);
 
-  { key: 'apple-magsafe-charger', name: 'شارژر بی‌سیم مگ‌سیف اپل', brand: 'Apple', category: 'wireless', aliases: ['مگ‌سیف', 'magsafe'] },
-  { key: 'samsung-wireless-15w', name: 'شارژر بی‌سیم ۱۵ وات سامسونگ', brand: 'Samsung', category: 'wireless', aliases: ['شارژر بی‌سیم سامسونگ'] },
+  for (let start = 0; start < rows.length; start += SEED_CHUNK_SIZE) {
+    await db
+      .insert(products)
+      .values(rows.slice(start, start + SEED_CHUNK_SIZE))
+      .onConflictDoNothing({ target: products.normalizedName })
+      .run();
+  }
 
-  { key: 'apple-usb-c-lightning-1m', name: 'کابل USB-C به لایتنینگ اپل ۱ متری', brand: 'Apple', category: 'cable', aliases: ['کابل اپل', 'کابل لایتنینگ'] },
-  { key: 'anker-usb-c-usb-c-1m', name: 'کابل USB-C به USB-C انکر ۱ متری', brand: 'Anker', category: 'cable', aliases: ['کابل انکر'] },
-  { key: 'baseus-lightning-1m', name: 'کابل لایتنینگ بیسوس ۱ متری', brand: 'Baseus', category: 'cable', aliases: ['کابل بیسوس'] },
-  { key: 'ugreen-micro-usb-1m', name: 'کابل میکرو USB یوگرین ۱ متری', brand: 'UGREEN', category: 'cable', aliases: ['کابل یوگرین'] },
-
-  { key: 'anker-powercore-10000', name: 'پاوربانک ۱۰۰۰۰ انکر PowerCore', brand: 'Anker', category: 'powerbank', aliases: ['پاوربانک انکر'] },
-  { key: 'xiaomi-power-bank-10000', name: 'پاوربانک ۱۰۰۰۰ شیائومی', brand: 'Xiaomi', category: 'powerbank', aliases: ['پاوربانک شیائومی'] },
-  { key: 'baseus-power-bank-20000', name: 'پاوربانک ۲۰۰۰۰ بیسوس', brand: 'Baseus', category: 'powerbank', aliases: ['پاوربانک بیسوس'] },
-
-  { key: 'apple-airpods-pro-2', name: 'ایرپاد پرو ۲ اپل', brand: 'Apple', category: 'audio', aliases: ['ایرپاد', 'airpods'] },
-  { key: 'samsung-galaxy-buds-2', name: 'گلکسی بادز ۲ سامسونگ', brand: 'Samsung', category: 'audio', aliases: ['بادز', 'galaxy buds'] },
-  { key: 'xiaomi-redmi-buds-4', name: 'ردمی بادز ۴ شیائومی', brand: 'Xiaomi', category: 'audio', aliases: ['ردمی بادز'] },
-  { key: 'anker-soundcore-q30', name: 'هدفون انکر Soundcore Life Q30', brand: 'Anker', category: 'audio', aliases: ['هدفون انکر'] },
-
-  { key: 'anker-soundcore-3', name: 'اسپیکر بلوتوثی انکر Soundcore 3', brand: 'Anker', category: 'speaker', aliases: ['اسپیکر انکر'] },
-  { key: 'jbl-go-4', name: 'اسپیکر بلوتوثی JBL GO 4', brand: 'JBL', category: 'speaker', aliases: [] },
-
-  { key: 'apple-magsafe-case-iphone-15', name: 'قاب مگ‌سیف آیفون ۱۵', brand: 'Apple', category: 'case', aliases: ['قاب مگ‌سیف', 'آیفون ۱۵'] },
-  { key: 'spigen-ultra-hybrid-iphone-15', name: 'قاب اسپیگن Ultra Hybrid آیفون ۱۵', brand: 'Spigen', category: 'case', aliases: ['قاب اسپیگن'] },
-  { key: 'samsung-silicone-case-s24', name: 'قاب سیلیکونی سامسونگ گلکسی S24', brand: 'Samsung', category: 'case', aliases: ['قاب s24'] },
-
-  { key: 'glass-iphone-15', name: 'گلس شیشه‌ای آیفون ۱۵', brand: 'Generic', category: 'glass', aliases: ['گلس آیفون ۱۵'] },
-  { key: 'glass-galaxy-s24', name: 'گلس شیشه‌ای سامسونگ گلکسی S24', brand: 'Generic', category: 'glass', aliases: ['گلس s24'] },
-
-  { key: 'apple-lightning-35mm', name: 'مبدل لایتنینگ به جک ۳٫۵ میلی‌متری اپل', brand: 'Apple', category: 'adapter', aliases: ['مبدل جک'] },
-  { key: 'apple-usb-c-to-usb-a', name: 'مبدل USB-C به USB-A اپل', brand: 'Apple', category: 'adapter', aliases: [] },
-  { key: 'ugreen-usb-c-hub-4in1', name: 'هاب USB-C چهار پورت یوگرین', brand: 'UGREEN', category: 'adapter', aliases: ['هاب یوگرین'] },
-
-  { key: 'magnetic-phone-holder', name: 'نگهدارنده مغناطیسی گوشی مخصوص خودرو', brand: 'Generic', category: 'holder', aliases: ['هولدر ماشین', 'مگ‌هولدر'] },
-];
-
-const PRODUCT_BY_KEY = new Map(PRODUCTS.map((product) => [product.key, product]));
-
-// Built once per isolate: searching a 30-item list through a normalized index is
-// far cheaper than re-normalizing on every query.
-const SEARCH_INDEX = PRODUCTS.map((product) => ({
-  product,
-  haystack: normalizeSearchText(
-    [product.name, product.brand, CATEGORIES[product.category], ...product.aliases].join(' '),
-  ),
-}));
-
-export function allProducts() {
-  return PRODUCTS;
+  const total = await db.$count(products);
+  return { inserted: total - before, total };
 }
 
-export function getProduct(key) {
-  return PRODUCT_BY_KEY.get(key) ?? null;
-}
-
-export function productsByCategory(category) {
-  return PRODUCTS.filter((product) => product.category === category);
-}
-
-export function categoryLabel(category) {
-  return CATEGORIES[category] ?? category;
+/** How many products are currently visible to users. */
+export function countActiveProducts() {
+  return db.$count(products, eq(products.isActive, true));
 }
 
 /**
- * Every word of the query must appear somewhere in the product's name, brand,
- * category or aliases — so "شارژر اپل" and "اپل ۲۰" both work, and Persian or
- * Arabic spelling of ی/ک makes no difference.
+ * One page of the catalog, oldest first. Paginated in SQL rather than loaded and
+ * sliced in memory, so the read cost does not grow with the catalog.
  */
-export function searchProducts(query, limit = 5) {
-  const words = normalizeSearchText(query).split(' ').filter(Boolean);
-  if (!words.length) return [];
+export function listActiveProducts({ page = 0, limit = CATALOG_PAGE_SIZE } = {}) {
+  const offset = Math.max(page, 0) * limit;
+  return db
+    .select()
+    .from(products)
+    .where(eq(products.isActive, true))
+    .orderBy(asc(products.id))
+    .limit(limit)
+    .offset(offset)
+    .all();
+}
 
-  const matches = [];
-  for (const { product, haystack } of SEARCH_INDEX) {
-    if (words.every((word) => haystack.includes(word))) {
-      matches.push(product);
-      if (matches.length === limit) break;
-    }
-  }
-  return matches;
+/**
+ * Look a product up by its database id, or null.
+ *
+ * This is the validation step for product references: price reports and flags
+ * store ids without a foreign key, so callers must check the result themselves
+ * (`if (!product) …`). A non-integer or non-positive id never reaches the query.
+ */
+export async function getProductById(productId) {
+  const id = toPositiveInt(productId);
+  if (id == null) return null;
+  return db.select().from(products).where(eq(products.id, id)).get();
+}
+
+/**
+ * Search active products by name and keywords.
+ *
+ * Filtering happens in SQL (so the cost stays bounded as the catalog grows) and
+ * ordering happens in `search.js`. Every query word must match either the
+ * normalized name or the keywords, which is why "شارژر اپل" and "apple charger"
+ * both work. A blank query returns [] instead of every product.
+ */
+export async function searchProducts(query, { limit = SEARCH.results } = {}) {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return [];
+
+  // AND across words, OR across columns: every word must appear in the name or
+  // in the keywords. `LIKE` on a NULL `keywords` yields NULL, and `NULL OR true`
+  // is true, so products without keywords still match on their name.
+  const tokenConditions = likePatterns(tokens).map((pattern) =>
+    or(like(products.normalizedName, pattern), like(products.keywords, pattern)),
+  );
+
+  const rows = await db
+    .select()
+    .from(products)
+    .where(and(eq(products.isActive, true), ...tokenConditions))
+    .orderBy(asc(products.id))
+    .limit(SEARCH.scanLimit)
+    .all();
+
+  return rankMatches(rows, query).slice(0, limit);
 }

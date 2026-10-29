@@ -1,32 +1,14 @@
-// Input normalization and validation. Pure functions: handlers decide *what* to
-// ask, this module decides *whether the answer is usable* and turns it into the
-// value the database stores.
+// Input parsing and validation. Pure functions: handlers decide *what* to ask,
+// this module decides *whether the answer is usable* and turns it into the value
+// the database stores.
+//
+// Character folding, digit folding and whitespace collapsing live in
+// `normalize.js` and are reused here — this file only adds the rules that are
+// specific to prices and identifiers.
 
 import { PRICE_LIMITS } from './config.js';
 import { formatToman } from './format.js';
-
-const PERSIAN_ZERO = 0x06f0;
-const ARABIC_INDIC_ZERO = 0x0660;
-
-// Characters that look different but mean the same thing to a Persian reader.
-// Folding them is what makes "آيفون" find "آیفون".
-const CHAR_FOLD = new Map([
-  ['\u064A', '\u06CC'], // ي → ی
-  ['\u0649', '\u06CC'], // ى → ی
-  ['\u0643', '\u06A9'], // ك → ک
-  ['\u0629', '\u0647'], // ة → ه
-  ['\u06C0', '\u0647'], // ۀ → ه
-  ['\u0623', '\u0627'], // أ → ا
-  ['\u0625', '\u0627'], // إ → ا
-  ['\u0622', '\u0627'], // آ → ا
-  ['\u0671', '\u0627'], // ٱ → ا
-  ['\u0624', '\u0648'], // ؤ → و
-  ['\u0640', ''],       // ـ tatweel, a decorative stretch
-]);
-
-// Zero-width joiners/marks, bidi controls and Arabic diacritics: invisible, but
-// they break naive substring matching.
-const INVISIBLE = /[\u200B-\u200F\u064B-\u0652]/g;
+import { foldChars, normalizeDigits } from './normalize.js';
 
 // "ملیون" is a very common misspelling of "میلیون"; accept both.
 const MULTIPLIERS = new Map([
@@ -42,38 +24,18 @@ const AMOUNT = /(\d+(?:\.\d+)?)(?:\s*(میلیون|ملیون|هزار))?/g;
 const ONLY_SPACE = /^\s*$/;
 const CONJUNCTION = /^\s*و\s*$/; // the "and" in "۲ میلیون و ۳۰۰ هزار"
 
-/** ۱۲۳ / ١٢٣ → "123" — users type Persian or Arabic-Indic digits freely. */
-export function normalizeDigits(value) {
-  return String(value ?? '')
-    .replace(/[\u06F0-\u06F9]/g, (char) => String(char.charCodeAt(0) - PERSIAN_ZERO))
-    .replace(/[\u0660-\u0669]/g, (char) => String(char.charCodeAt(0) - ARABIC_INDIC_ZERO));
-}
-
-/** Fold a search query (or a catalog entry) into a comparable form. */
-export function normalizeSearchText(value) {
-  const folded = Array.from(normalizeDigits(value), (char) => CHAR_FOLD.get(char) ?? char).join('');
-  return folded.replace(INVISIBLE, '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-/** Collapse whitespace for a value we display as-is (store name, city). */
-export function cleanFreeText(value, maxLength = Infinity) {
-  const text = String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!text) return null;
-  return text.length > maxLength ? text.slice(0, maxLength).trim() : text;
-}
-
 /**
  * Read a price the way a shopper writes it and return whole toman, or null.
  *
  * Accepted: "1250000", "1,250,000", "۱٬۲۵۰٬۰۰۰ تومان", "1.250.000",
  * "۱.۵ میلیون", "۹۵۰ هزار", "۲ میلیون و ۳۰۰ هزار".
+ * Rejected rather than guessed: rial amounts, decimals without a multiplier
+ * ("1250.5"), spaced digit groups ("1 250 000"), and anything non-numeric.
  */
 export function parseToman(raw) {
   if (raw == null) return null;
 
-  const text = normalizeSearchText(raw)
+  const text = foldChars(raw)
     .replace(/تومان|تومن/g, '')
     .replace(/\u066B/g, '.') // ٫ — decimal separator
     .replace(/[\u066C\u060C,]/g, '') // ٬ ، , — thousands separators
@@ -131,4 +93,23 @@ export function priceRangeError(amount) {
     return `بیش‌ترین قیمتی که می‌شود ثبت کرد ${formatToman(PRICE_LIMITS.max)} است.`;
   }
   return null;
+}
+
+/**
+ * A database id from user input ("12", "۱۲", 12) as a positive integer, or null.
+ * Used wherever an id arrives from outside — callback data, command arguments —
+ * so a malformed value never reaches a query.
+ */
+export function toPositiveInt(value) {
+  const parsed = Number.parseInt(normalizeDigits(value).trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** Collapse whitespace for a value we display as-is (store name, city). */
+export function cleanFreeText(value, maxLength = Infinity) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return null;
+  return text.length > maxLength ? text.slice(0, maxLength).trim() : text;
 }

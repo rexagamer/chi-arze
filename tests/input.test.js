@@ -2,24 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PRICE_LIMITS } from '../tgcloud/lib/config.js';
-import {
-  cleanFreeText,
-  normalizeDigits,
-  normalizeSearchText,
-  parseToman,
-  priceRangeError,
-} from '../tgcloud/lib/input.js';
-
-test('normalizeDigits converts Persian and Arabic-Indic digits', () => {
-  assert.equal(normalizeDigits('۰۱۲۳۴۵۶۷۸۹'), '0123456789');
-  assert.equal(normalizeDigits('٤٥٦'), '456');
-});
-
-test('normalizeSearchText folds spelling variants and drops invisible characters', () => {
-  assert.equal(normalizeSearchText('آيفون'), normalizeSearchText('آیفون'));
-  assert.equal(normalizeSearchText('كي\u200cف'), normalizeSearchText('کيف'));
-  assert.equal(normalizeSearchText('  اپل   ۲۰ وات '), 'اپل 20 وات');
-});
+import { cleanFreeText, parseToman, priceRangeError, toPositiveInt } from '../tgcloud/lib/input.js';
 
 test('parseToman accepts the ways people actually write prices', () => {
   assert.equal(parseToman('1250000'), 1_250_000);
@@ -55,4 +38,17 @@ test('cleanFreeText collapses whitespace and respects the limit', () => {
   assert.equal(cleanFreeText('  دیجی   کالا  '), 'دیجی کالا');
   assert.equal(cleanFreeText('   '), null);
   assert.equal(cleanFreeText('abcdef', 3), 'abc');
+});
+
+test('toPositiveInt accepts sensible ids and rejects everything else', () => {
+  assert.equal(toPositiveInt('12'), 12);
+  assert.equal(toPositiveInt(' ۷ '), 7);
+  assert.equal(toPositiveInt(3), 3);
+  // Unknown, malformed or out-of-range ids must never reach a query.
+  assert.equal(toPositiveInt('abc'), null);
+  assert.equal(toPositiveInt('0'), null);
+  assert.equal(toPositiveInt('-4'), null);
+  assert.equal(toPositiveInt(''), null);
+  assert.equal(toPositiveInt(null), null);
+  assert.equal(toPositiveInt(undefined), null);
 });
