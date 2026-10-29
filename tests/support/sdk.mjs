@@ -12,13 +12,37 @@
 
 import { DatabaseSync } from 'node:sqlite';
 
-export const state = { database: null, calls: [] };
+export const state = { database: null, calls: [], failures: new Map() };
+
+/**
+ * Make the next call to one Bot API method throw, so the "stale button" and
+ * "Telegram said no" paths can be exercised. One-shot: the call after it behaves
+ * normally again.
+ */
+export function failNext(method, error) {
+  state.failures.set(String(method), error);
+  return error;
+}
+
+/** A BotApiError-shaped object, as the SDK would throw it. */
+export function botApiError(code, description) {
+  const error = new BotApiError(description);
+  error.code = code;
+  error.description = description;
+  return error;
+}
 
 /** The Bot API double: records every call, answers with a plausible object. */
 export const api = new Proxy(
   {},
   {
     get: (_target, method) => async (params) => {
+      const failure = state.failures.get(String(method));
+      if (failure) {
+        state.failures.delete(String(method));
+        state.calls.push([String(method), params, 'failed']);
+        throw failure;
+      }
       state.calls.push([String(method), params]);
       return { message_id: state.calls.length, chat: { id: params?.chat_id } };
     },

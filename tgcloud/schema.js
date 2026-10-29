@@ -22,16 +22,10 @@ export const users = table(
     id: integer('id').primaryKey({ autoIncrement: true }),
     tgId: integer('tg_id').notNull().unique(),
     firstName: text('first_name'),
-    // `blocked` lets moderation stop an abusive account from submitting, without
-    // deleting the reports they already contributed.
-    status: text('status').notNull().default('active'),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => ({
-    statusIsKnown: check('chk_users_status', sql`${t.status} in ('active', 'blocked')`),
-  }),
 );
 
 // The curated accessory catalog. Seeded from `lib/catalog-data.js` by the admin

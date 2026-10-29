@@ -6,7 +6,7 @@
 // code — `text.js` turns it into Persian — so the rules can be tested exactly.
 
 import { PRICE_LIMITS, TEXT_LIMITS } from './config.js';
-import { cleanFreeText, parseToman, priceRangeError, toPositiveInt } from './input.js';
+import { cleanFreeText, isPriceWithinLimits, parseToman, toPositiveInt } from './input.js';
 import { normalizeText } from './normalize.js';
 
 export const FIELD_SEPARATOR = '|';
@@ -67,8 +67,7 @@ export function parsePrice(raw) {
   const value = parseToman(text);
   if (value == null) return { ok: false, error: 'PRICE_INVALID', detail: { text } };
 
-  const rangeError = priceRangeError(value);
-  if (rangeError) {
+  if (!isPriceWithinLimits(value)) {
     return {
       ok: false,
       error: 'PRICE_OUT_OF_RANGE',

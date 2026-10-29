@@ -19,6 +19,7 @@ import {
   HELP,
   NON_TEXT,
   FLAG_ID_REQUIRED,
+  GENERIC_ERROR,
   PRODUCT_ID_REQUIRED,
   REPORT_FAILED,
   REPORT_ID_REQUIRED,
@@ -73,19 +74,50 @@ const COMMANDS = new Map([
 
 /** "/search@ChiArzehBot charger" → { name: 'search', args: 'charger' }. */
 function parseCommand(text) {
-  if (typeof text !== 'string' || text[0] !== '/') return null;
-  const [head, ...rest] = text.trim().split(/\s+/);
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed[0] !== '/') return null;
+  const [head, ...rest] = trimmed.split(/\s+/);
   const name = head.slice(1).split('@')[0].toLowerCase();
-  return name ? { name, args: rest.join(' ') } : null;
+  // `{ name: '' }` for a bare "/" — the router answers it with the help screen
+  // instead of searching for a slash.
+  return { name, args: rest.join(' ') };
 }
 
 export default async function (message) {
+  try {
+    return await route(message);
+  } catch (error) {
+    // One place that turns an unexpected failure into a sentence the user can
+    // act on. The detail — never the message text — goes to `tgcloud run` logs.
+    console.error(
+      'message handling failed',
+      { command: parseCommand(message?.text)?.name ?? null },
+      error?.code ?? '',
+      error?.description ?? error?.message ?? error,
+    );
+    const chatId = message?.chat?.id;
+    if (!chatId) return;
+    // If even this reply fails the user is unreachable (blocked the bot), which
+    // is worth one line in the logs rather than silence.
+    await sendHtml(chatId, GENERIC_ERROR).catch((failure) =>
+      console.warn('could not send the error message', failure?.description ?? failure?.message ?? failure),
+    );
+  }
+}
+
+async function route(message) {
   const chatId = message.chat.id;
   const command = parseCommand(message.text);
 
   if (command) {
     const handler = COMMANDS.get(command.name);
-    if (!handler) return sendHtml(chatId, unknownCommand(command.name), mainMenu());
+    // A bare "/" is an empty command, not a search for a slash.
+    if (!handler) {
+      return command.name
+        ? sendHtml(chatId, unknownCommand(command.name), mainMenu())
+        : sendHtml(chatId, HELP, mainMenu());
+    }
 
     // One gate for every privileged command: nothing below it runs for
     // unauthorised users, so no data can be read or changed by them.
@@ -156,8 +188,15 @@ async function report(message, args) {
     if (!result.ok) return sendHtml(message.chat.id, reportErrorText(result));
 
     // A heads-up only; it never blocks the report and never changes its status.
-    const sample = await recentApprovedPrices(result.product.id);
-    const deviation = priceDeviation(result.report.priceToman, sample);
+    // The report is already stored at this point, so a failure here must not be
+    // reported as a failed submission — it is logged and the hint is skipped.
+    let deviation = null;
+    try {
+      const sample = await recentApprovedPrices(result.product.id);
+      deviation = priceDeviation(result.report.priceToman, sample);
+    } catch (error) {
+      console.warn('could not compute the deviation hint', error?.message ?? error);
+    }
 
     return sendHtml(
       message.chat.id,

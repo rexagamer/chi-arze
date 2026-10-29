@@ -4,7 +4,7 @@
 
 import { PRICE_LIMITS, SEARCH, SUMMARY } from './config.js';
 import { categoryLabel } from './catalog-data.js';
-import { escapeHtml, formatRelativeTime, formatToman, toPersianDigits } from './format.js';
+import { escapeHtml, formatDate, formatRelativeTime, formatToman, toPersianDigits } from './format.js';
 
 export const START = `🎧 <b>چی‌ارزه؟</b>
 قیمت لوازم جانبی موبایل در ایران، از زبان خودِ خریدارها.
@@ -15,9 +15,9 @@ export const START = `🎧 <b>چی‌ارزه؟</b>
 • هر گزارش پیش از انتشار بررسی می‌شود.
 • کنار هر قیمت معلوم است که چه‌قدر تازه است.
 
-فهرست کالاها: /products
-جست‌وجو: /search شارژر اپل
-ثبت قیمت: /report`;
+برای شروع، <b>📦 کالاها</b> را بزنید یا /products را بفرستید.
+جست‌وجو: <code>/search شارژر اپل</code>
+ثبت قیمت: <code>/report</code>`;
 
 export const HELP = `<b>راهنما</b>
 
@@ -62,6 +62,7 @@ export const EMPTY_CATALOG = `فهرست کالاها هنوز آماده نیس
 export const SEARCH_EMPTY_QUERY = `عبارت جست‌وجو را بنویسید.
 مثال: <code>/search شارژر اپل</code>`;
 
+// Administrator-only message, so it may mention the setup step they can run.
 export const SEED_FAILED = `ثبت فهرست کالاها ناموفق بود.
 اگر تازه نصب کرده‌اید، ابتدا <code>npm run migrate</code> را اجرا کنید.`;
 
@@ -100,8 +101,8 @@ export function productListMessage({ products, page, pageCount, total }) {
     '',
     ...lines,
     '',
-    `قیمت‌ها و ثبت گزارش: <code>/product ${toPersianDigits(products[0].id)}</code>`,
-    `جست‌وجو: <code>/search شارژر</code>`,
+    'برای دیدن قیمت‌ها، روی نام کالا بزنید.',
+    'جست‌وجو: <code>/search شارژر</code>',
   ].join('\n');
 }
 
@@ -129,7 +130,9 @@ export function searchResultsMessage({ query, products }) {
     '',
     ...lines,
     '',
-    products.length >= SEARCH.results ? `نتایج بیشتر؟ عبارت دقیق‌تری بنویسید.` : `فهرست کامل: /products`,
+    products.length >= SEARCH.results
+      ? 'نتایج بیشتر؟ عبارت دقیق‌تری بنویسید.'
+      : 'برای دیدن قیمت‌ها، روی نام کالا بزنید.',
   ].join('\n');
 }
 
@@ -160,7 +163,7 @@ export const REPORT_USAGE = `<b>ثبت گزارش قیمت</b>
 • هر گزارش پیش از انتشار بررسی می‌شود و تا آن زمان در هیچ قیمتی حساب نمی‌شود.`;
 
 export const REPORT_FAILED = `ثبت گزارش ناموفق بود.
-اگر تازه نصب کرده‌اید، ابتدا <code>npm run migrate</code> را اجرا کنید.`;
+کمی بعد دوباره تلاش کنید؛ گزارش شما ثبت نشده است.`;
 
 const REPORT_ERRORS = {
   USAGE: () => REPORT_USAGE,
@@ -270,18 +273,21 @@ export function productPriceMessage({ product, summary, now = new Date() }) {
   } else {
     const latest = summary.latestAt ? formatRelativeTime(summary.latestAt, now) : 'نامشخص';
 
+    const counts = `${toPersianDigits(summary.count)} گزارش از ${toPersianDigits(summary.contributors)} نفر`;
+
     if (summary.showMedian) {
-      lines.push(`💰 میانهٔ قیمت: <b>${formatToman(summary.median)}</b>`);
-    } else {
       lines.push(
-        `💰 ${toPersianDigits(summary.count)} گزارش تأییدشده از ${toPersianDigits(summary.contributors)} نفر ثبت شده است.`,
+        `💰 میانهٔ قیمت: <b>${formatToman(summary.median)}</b>`,
+        `${counts} — آخرین گزارش ${latest}`,
+      );
+    } else {
+      // No median: say why, with the number of people rather than a vague "soon".
+      lines.push(
+        `💰 ${counts} — آخرین گزارش ${latest}`,
         `برای نمایش میانه دست‌کم ${toPersianDigits(SUMMARY.minContributorsForMedian)} نفر گزارش‌دهندهٔ مستقل لازم است.`,
       );
     }
 
-    lines.push(
-      `${toPersianDigits(summary.count)} گزارش از ${toPersianDigits(summary.contributors)} نفر — آخرین گزارش ${latest}`,
-    );
     if (summary.showRange) {
       lines.push(`بازهٔ گزارش‌ها: ${formatToman(summary.min)} تا ${formatToman(summary.max)}`);
     }
@@ -311,12 +317,9 @@ export function productPriceMessage({ product, summary, now = new Date() }) {
 
   lines.push(
     '',
-    'این اعداد گزارش کاربران است، نه قیمت رسمی فروشگاه؛ ممکن است موجود نباشد.',
+    'این اعداد گزارش کاربران است، نه قیمت رسمی فروشگاه؛ قیمت‌ها عوض می‌شوند و موجود بودن کالا تضمینی نیست.',
     `ثبت قیمت خودتان: <code>/report ${toPersianDigits(product.id)} | قیمت به تومان | فروشگاه</code>`,
   );
-  if (summary.reports.length) {
-    lines.push(`علامت‌زدن گزارش نامعتبر: <code>/flag شمارهٔ گزارش</code>`);
-  }
   return lines.join('\n');
 }
 
@@ -370,11 +373,15 @@ export function pendingQueueMessage({ reports, total, deviations, now = new Date
     const flags = report.flagCount ? ` — 🚩 ${toPersianDigits(report.flagCount)}` : '';
     const outlier = deviations?.get(report.id) ? ' — ⚠️ دور از میانه' : '';
     lines.push(
-      `${productMarker(report.id)} ${escapeHtml(report.productName ?? '')}`,
+      `${productMarker(report.id)} ${escapeHtml(report.productName ?? 'کالای حذف‌شده')}`,
       `   ${formatToman(report.priceToman)} — ${escapeHtml(report.storeName)} — ${formatRelativeTime(report.createdAt, now)}${flags}${outlier}`,
     );
   }
-  lines.push('', '<code>/approve شماره</code> · <code>/reject شماره دلیل</code> · <code>/inspect شماره</code>');
+  lines.push(
+    '',
+    'تأیید و رد با دکمه‌های زیر؛ جزئیات بیشتر: <code>/inspect شماره</code>',
+    'رد کردن با دلیل: <code>/reject شماره دلیل</code>',
+  );
   return lines.join('\n');
 }
 
@@ -386,7 +393,7 @@ export function inspectMessage({ report, product, flags, deviation, now = new Da
     `قیمت: ${formatToman(report.priceToman)}`,
     `فروشگاه: ${escapeHtml(report.storeName)}`,
     `منبع: ${report.sourceUrl ? escapeHtml(report.sourceUrl) : '—'}`,
-    `ثبت: ${report.createdAt.toISOString().slice(0, 10)} (${formatRelativeTime(report.createdAt, now)})`,
+    `ثبت: ${formatDate(report.createdAt)} (${formatRelativeTime(report.createdAt, now)})`,
     `علامت‌ها: ${toPersianDigits(flags.length)}`,
   ];
 
@@ -402,7 +409,7 @@ export function inspectMessage({ report, product, flags, deviation, now = new Da
 
   if (report.status !== 'pending') {
     const when = report.reviewedAt ? formatRelativeTime(report.reviewedAt, now) : 'نامشخص';
-    lines.push('', `بررسی‌شده ${when} توسط <code>${escapeHtml(String(report.reviewedBy ?? '—'))}</code>`);
+    lines.push('', `بررسی‌شده: ${when}`);
     if (report.reviewNote) lines.push(`یادداشت: ${escapeHtml(report.reviewNote)}`);
   }
 
@@ -420,3 +427,22 @@ export function decisionMessage(result, { action, reportId }) {
   }
   return reportErrorText(result);
 }
+
+// ── Callback answers ─────────────────────────────────────────────────────────
+// Short toasts: a callback answer is a bubble at the top of the screen, not a
+// message, so these are one line each — the screen behind them does the talking.
+
+export const TOAST_FLAGGED = '🚩 ثبت شد؛ برای بررسی به مدیران نشان داده می‌شود.';
+export const TOAST_APPROVED = '✅ تأیید شد.';
+export const TOAST_REJECTED = '🗑 رد شد.';
+export const TOAST_STALE_BUTTON = 'این دکمه دیگر معتبر نیست.';
+export const TOAST_NOT_ADMIN = 'این عملیات در دسترس شما نیست.';
+export const TOAST_PRODUCT_MISSING = 'این کالا پیدا نشد.';
+export const TOAST_REPORT_MISSING = 'این گزارش پیدا نشد.';
+
+/** A failed callback must say *something*; the detail goes to the logs. */
+export const TOAST_FAILED = 'انجام این کار ممکن نشد. کمی بعد دوباره تلاش کنید.';
+
+/** Last-resort message when a handler throws before it can reply. */
+export const GENERIC_ERROR = `مشکلی پیش آمد و این درخواست انجام نشد.
+کمی بعد دوباره تلاش کنید؛ اگر ادامه داشت /help را ببینید.`;

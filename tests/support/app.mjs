@@ -22,7 +22,7 @@ export async function createTestApp() {
     state.database = database;
     for (const statement of statements) database.exec(statement);
 
-    const [message, callbackQuery, reports, moderation, users, catalog, summary, reportInput, text, views] =
+    const [message, callbackQuery, reports, moderation, users, catalog, summary, reportInput, text, views, keyboards] =
       await Promise.all([
         import('../../tgcloud/handlers/message.js'),
         import('../../tgcloud/handlers/callback_query.js'),
@@ -34,6 +34,7 @@ export async function createTestApp() {
         import('../../tgcloud/lib/report-input.js'),
         import('../../tgcloud/lib/text.js'),
         import('../../tgcloud/lib/views.js'),
+        import('../../tgcloud/lib/keyboards.js'),
       ]);
 
     booted = {
@@ -50,6 +51,8 @@ export async function createTestApp() {
       reportInput,
       text,
       views,
+      keyboards,
+      calls,
     };
   }
 
@@ -59,7 +62,20 @@ export async function createTestApp() {
   }
   booted.database.exec("DELETE FROM sqlite_sequence WHERE name IN ('users','products','price_reports','report_flags')");
   calls.length = 0;
+  state.failures.clear();
   return booted;
+}
+
+/**
+ * Re-create every table from the schema. Used by the tests that deliberately
+ * break the database (a dropped table) to prove the bot answers instead of
+ * crashing — the next test must start from a working schema again.
+ */
+export function restoreSchema() {
+  for (const name of ['report_flags', 'price_reports', 'products', 'users']) {
+    booted.database.exec(`DROP TABLE IF EXISTS "${name}"`);
+  }
+  for (const statement of booted.statements) booted.database.exec(statement);
 }
 
 /** The chat payload a handler receives. */
@@ -73,11 +89,24 @@ export function message(chatId, fromId, text, extra = {}) {
   };
 }
 
-/** The last message text the bot sent. */
-export function lastText() {
-  return calls.at(-1)?.[1]?.text ?? '';
+const SCREEN_METHODS = new Set(['sendMessage', 'editMessageText']);
+
+/** The last [method, params] pair that rendered a screen (not a callback answer). */
+export function lastScreen() {
+  return [...calls].reverse().find(([method]) => SCREEN_METHODS.has(method)) ?? null;
 }
 
+/** The text of the last screen the bot rendered. */
+export function lastText() {
+  return lastScreen()?.[1]?.text ?? '';
+}
+
+/** "sendMessage" or "editMessageText" — how the last screen reached the user. */
 export function lastMethod() {
-  return calls.at(-1)?.[0];
+  return lastScreen()?.[0] ?? null;
+}
+
+/** Screens actually delivered — a call that threw rendered nothing. */
+export function screenCount() {
+  return calls.filter(([method, , status]) => SCREEN_METHODS.has(method) && status !== 'failed').length;
 }

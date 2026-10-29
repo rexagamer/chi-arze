@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PRICE_LIMITS } from '../tgcloud/lib/config.js';
-import { cleanFreeText, parseToman, priceRangeError, toPositiveInt } from '../tgcloud/lib/input.js';
+import { cleanFreeText, isPriceWithinLimits, parseToman, toPositiveInt } from '../tgcloud/lib/input.js';
 
 test('parseToman accepts the ways people actually write prices', () => {
   assert.equal(parseToman('1250000'), 1_250_000);
@@ -27,11 +27,16 @@ test('parseToman rejects things that are not a whole price', () => {
   assert.equal(parseToman('1250000 ریال'), null);
 });
 
-test('priceRangeError explains the bounds in toman', () => {
-  assert.equal(priceRangeError(1_250_000), null);
-  assert.match(priceRangeError(PRICE_LIMITS.min - 1), /کم\u200cترین/);
-  assert.match(priceRangeError(PRICE_LIMITS.max + 1), /بیش\u200cترین/);
-  assert.match(priceRangeError(0), /صفر/);
+test('isPriceWithinLimits accepts real prices and rejects the edges', () => {
+  assert.equal(isPriceWithinLimits(1_250_000), true);
+  assert.equal(isPriceWithinLimits(PRICE_LIMITS.min), true);
+  assert.equal(isPriceWithinLimits(PRICE_LIMITS.max), true);
+  assert.equal(isPriceWithinLimits(PRICE_LIMITS.min - 1), false);
+  assert.equal(isPriceWithinLimits(PRICE_LIMITS.max + 1), false);
+  assert.equal(isPriceWithinLimits(0), false);
+  assert.equal(isPriceWithinLimits(-5), false);
+  // A float is not toman, and is rejected before it can reach the database.
+  assert.equal(isPriceWithinLimits(1_250_000.5), false);
 });
 
 test('cleanFreeText collapses whitespace and respects the limit', () => {
@@ -44,6 +49,10 @@ test('toPositiveInt accepts sensible ids and rejects everything else', () => {
   assert.equal(toPositiveInt('12'), 12);
   assert.equal(toPositiveInt(' ۷ '), 7);
   assert.equal(toPositiveInt(3), 3);
+  // The whole string must be an id: "12abc" is not id 12.
+  assert.equal(toPositiveInt('12abc'), null);
+  assert.equal(toPositiveInt('12.5'), null);
+  assert.equal(toPositiveInt('1e3'), null);
   // Unknown, malformed or out-of-range ids must never reach a query.
   assert.equal(toPositiveInt('abc'), null);
   assert.equal(toPositiveInt('0'), null);
