@@ -236,5 +236,5 @@ test('/price is an alias for the product price page', async () => {
 
   await app.message(message(1001, 1001, '/product 1'));
   assert.equal(viaAlias, lastText());
-  assert.match(viaAlias, /۱ گزارش تأییدشده/);
+  assert.match(viaAlias, /۱ گزارش از ۱ نفر/);
 });

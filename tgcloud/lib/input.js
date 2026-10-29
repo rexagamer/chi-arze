@@ -7,7 +7,6 @@
 // specific to prices and identifiers.
 
 import { PRICE_LIMITS } from './config.js';
-import { formatToman } from './format.js';
 import { foldChars, normalizeDigits } from './normalize.js';
 
 // "ملیون" is a very common misspelling of "میلیون"; accept both.
@@ -81,28 +80,38 @@ export function parseToman(raw) {
   return Number.isSafeInteger(total) && total > 0 ? total : null;
 }
 
-/** Persian explanation of why an amount is unusable, or null when it is fine. */
-export function priceRangeError(amount) {
-  if (!Number.isInteger(amount) || amount <= 0) {
-    return 'قیمت باید یک عدد صحیح و بزرگ‌تر از صفر باشد.';
-  }
-  if (amount < PRICE_LIMITS.min) {
-    return `کم‌ترین قیمتی که می‌شود ثبت کرد ${formatToman(PRICE_LIMITS.min)} است.`;
-  }
-  if (amount > PRICE_LIMITS.max) {
-    return `بیش‌ترین قیمتی که می‌شود ثبت کرد ${formatToman(PRICE_LIMITS.max)} است.`;
-  }
-  return null;
+/**
+ * Is this a price the bot is willing to store? Whole toman, positive, and inside
+ * the configured bounds. The wording of the refusal lives in `text.js` — this is
+ * the rule, not the message.
+ */
+export function isPriceWithinLimits(amount) {
+  return (
+    Number.isInteger(amount) &&
+    amount > 0 &&
+    amount >= PRICE_LIMITS.min &&
+    amount <= PRICE_LIMITS.max
+  );
 }
+
+const ALL_DIGITS = /^\d+$/;
 
 /**
  * A database id from user input ("12", "۱۲", 12) as a positive integer, or null.
  * Used wherever an id arrives from outside — callback data, command arguments —
  * so a malformed value never reaches a query.
+ *
+ * The whole string must be digits: `parseInt` alone would read "12abc" and
+ * "12.5" as 12, which is a silently different id from the one the user meant.
  */
 export function toPositiveInt(value) {
-  const parsed = Number.parseInt(normalizeDigits(value).trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && value > 0 ? value : null;
+  }
+  const text = normalizeDigits(String(value ?? '')).trim();
+  if (!ALL_DIGITS.test(text)) return null;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 /** Collapse whitespace for a value we display as-is (store name, city). */

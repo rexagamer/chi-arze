@@ -6,7 +6,13 @@
 import { getProductById, countActiveProducts, listActiveProducts, searchProducts } from './catalog.js';
 import { CATALOG_PAGE_SIZE, SUMMARY } from './config.js';
 import { toPositiveInt } from './input.js';
-import { catalogPagination, mainMenu } from './keyboards.js';
+import {
+  mainMenu,
+  moderationKeyboard,
+  productKeyboard,
+  productListKeyboard,
+  searchResultsKeyboard,
+} from './keyboards.js';
 import { countPendingReports, inspectReport, listPendingReports, moderationStats } from './moderation.js';
 import { approvedPriceSamples, productPriceSummary } from './reports.js';
 import { priceDeviation } from './summary.js';
@@ -23,7 +29,7 @@ import {
 /** A catalog page, clamped to the pages that exist. `requestedPage` is 0-based. */
 export async function catalogPageView(requestedPage = 0) {
   const total = await countActiveProducts();
-  if (total === 0) return { text: EMPTY_CATALOG, keyboard: null };
+  if (total === 0) return { text: EMPTY_CATALOG, keyboard: mainMenu() };
 
   const pageCount = Math.ceil(total / CATALOG_PAGE_SIZE);
   const page = Math.min(Math.max(toPositiveInt(requestedPage) ?? 0, 0), pageCount - 1);
@@ -31,15 +37,17 @@ export async function catalogPageView(requestedPage = 0) {
 
   return {
     text: productListMessage({ products, page, pageCount, total }),
-    // With a single page there is nowhere to page to, so offer the menu instead.
-    keyboard: catalogPagination(page, pageCount) ?? mainMenu(),
+    keyboard: productListKeyboard({ products, page, pageCount }),
   };
 }
 
 /** Search results for a (non-empty) query. */
 export async function searchView(query) {
   const products = await searchProducts(query);
-  return { text: searchResultsMessage({ query, products }), keyboard: null };
+  return {
+    text: searchResultsMessage({ query, products }),
+    keyboard: searchResultsKeyboard(products),
+  };
 }
 
 /**
@@ -55,7 +63,11 @@ export async function productView(productId) {
   if (!product) return null;
 
   const summary = await productPriceSummary(product.id);
-  return { text: productPriceMessage({ product, summary }), keyboard: null };
+  return {
+    text: productPriceMessage({ product, summary }),
+    // Flag buttons carry the ids of the reports actually shown on this page.
+    keyboard: productKeyboard({ reports: summary.reports.slice(0, SUMMARY.recentReportsShown) }),
+  };
 }
 
 /**
@@ -73,7 +85,10 @@ export async function pendingView() {
     if (deviation?.isUnusual) deviations.set(report.id, deviation);
   }
 
-  return { text: pendingQueueMessage({ reports, total, deviations }), keyboard: null };
+  return {
+    text: pendingQueueMessage({ reports, total, deviations }),
+    keyboard: reports.length ? moderationKeyboard(reports.map((report) => report.id)) : mainMenu(),
+  };
 }
 
 /** `/admin`: the counts and the command list. No configuration is revealed. */
@@ -95,6 +110,7 @@ export async function inspectView(reportId) {
 
   return {
     text: inspectMessage({ ...details, deviation }),
-    keyboard: null,
+    // Only a pending report can still be decided; anything else gets the way back.
+    keyboard: moderationKeyboard(details.report.status === 'pending' ? [details.report.id] : []),
   };
 }

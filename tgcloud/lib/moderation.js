@@ -23,7 +23,7 @@ export async function listPendingReports({ limit = SUMMARY.pendingPageSize, offs
            p.name AS product_name,
            (SELECT COUNT(*) FROM report_flags f WHERE f.report_id = r.id) AS flag_count
     FROM price_reports r
-    JOIN products p ON p.id = r.product_id
+    LEFT JOIN products p ON p.id = r.product_id
     WHERE r.status = 'pending'
     ORDER BY r.created_at ASC, r.id ASC
     LIMIT ${limit} OFFSET ${offset}

@@ -164,11 +164,12 @@ Project-specific rules; read these before touching the bot.
 - **Money is whole toman.** `price_reports.price_toman` is an integer. Parse input
   with `parseToman` + `parsePrice` and display with `formatToman`. Never store
   rial, floats or formatted strings, and never convert rial → toman.
-- **Admin allowlist:** the Telegram IDs in `lib/config.js` (`isAdmin`), checked in
-  **one place** — `handlers/message.js` gates every command in `ADMIN_COMMANDS`
-  before dispatch. Business functions in `lib/moderation.js` assume the caller is
-  already authorised; never add a new privileged command without adding it to that
-  set. Never authorise by username or first name.
+- **Admin allowlist:** the Telegram IDs in `lib/config.js` (`isAdmin`). Commands
+  are gated **once** in `handlers/message.js` (`ADMIN_COMMANDS`) before dispatch;
+  button presses are gated independently in `handlers/callback_query.js`, because
+  a callback can be forged and never passes through the router. Business functions
+  in `lib/moderation.js` assume the caller is already authorised. Never authorise
+  by username or first name, and never by anything carried in `callback_data`.
 - **Business rules live in `config.js`**: price bounds, duplicate window, rate
   limit, summary thresholds. Change behaviour there, not by hard-coding numbers.
 - **Raw SQL vs. the query builder:** `catalog.js` uses the builder; `reports.js`,
@@ -186,9 +187,29 @@ Project-specific rules; read these before touching the bot.
   it is idempotent because `products.normalized_name` is UNIQUE.
 - **No foreign keys:** validate `product_id` with `getProductById()` and
   `report_id` with `getReportById()` before writing anything that references them.
+- **Callbacks go through `lib/keyboards.js`.** Every button encodes
+  `area:action[:arg]` (≤ 64 bytes) and `parseCallbackData` is the only parser:
+  unknown areas, wrong arity, non-integer ids and oversized payloads return null.
+  Parsing proves shape only — the handler still checks that the row exists, that
+  the transition is allowed, and that the presser may do it. Never put secrets,
+  names or free text in `callback_data`.
+- **Buttons and copy are separate.** `views.js` decides which keyboard a screen
+  gets; `text.js` decides what it says; a keyboard's button labels are display
+  text and may be Persian, while `callback_data` stays ASCII.
+- **Errors are handled once, at the top of each handler.** `handlers/message.js`
+  and `handlers/callback_query.js` catch everything, log `code`/`description`
+  (never the user's text) with `console.error`, and reply with one Persian
+  sentence. A callback is *always* answered, even when it is refused, or the
+  spinner never stops.
 - **Offline checks:** `npm run check` (parse + imports) and `npm test`. Database
   logic is tested against real SQLite through the `sdk` double in
   `tests/support/`; the DDL is generated from `schema.js`, so schema edits are
   exercised automatically. Add a test there for any new rule; pure logic goes in
-  a plain `tests/*.test.js`.
+  a plain `tests/*.test.js`. Handler behaviour (commands, keyboards, callbacks) is
+  tested through `tests/support/app.mjs`, which boots the router against a fresh
+  in-memory database — no mocks of `reports.js` or `moderation.js`, so the tests
+  exercise the real SQL.
+- **No conversation state.** Nothing lives in a module-level variable; assume each
+  update is a cold invocation. A multi-step flow would need a table with an
+  explicit expiry — `/report` is one line precisely to avoid that.
 - `tests/` and `scripts/` sit outside `tgcloud/`, so they are never deployed.

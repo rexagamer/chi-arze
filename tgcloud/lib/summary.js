@@ -55,11 +55,6 @@ export function freshness(latestAt, now = new Date()) {
   return { days, isStale: days > SUMMARY.staleAfterDays };
 }
 
-/** The cutoff before which an approved report is no longer "recent". */
-export function recentWindowStart(now = new Date(), days = SUMMARY.recentDays) {
-  return new Date(now.getTime() - days * DAY_MS);
-}
-
 /**
  * Compare one price with the recent approved prices for the same product.
  *

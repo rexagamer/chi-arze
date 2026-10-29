@@ -194,11 +194,19 @@ export async function productPriceSummary(productId, { now = new Date() } = {}) 
 
   const latestAt = totals?.latest_at ? new Date(totals.latest_at * 1000) : null;
 
+  // The aggregate is authoritative (the sample above is capped), so the rules
+  // that depend on counts are re-applied to it — otherwise a capped sample could
+  // say "3 contributors" while the same message says "1 report".
+  const count = totals?.total ?? reports.length;
+  const contributors = totals?.contributors ?? 0;
+  const summary = summarizeApproved(reports);
+
   return {
-    ...summarizeApproved(reports),
-    // The aggregate is authoritative even when the sample is capped.
-    count: totals?.total ?? reports.length,
-    contributors: totals?.contributors ?? 0,
+    ...summary,
+    count,
+    contributors,
+    showMedian: contributors >= SUMMARY.minContributorsForMedian,
+    showRange: contributors >= 2 && count >= 2,
     latestAt,
     ...freshness(latestAt, now),
     reports,

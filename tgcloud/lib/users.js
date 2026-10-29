@@ -26,7 +26,7 @@ export async function ensureUser(from) {
   const result = await db.run(sql`
     INSERT INTO users (tg_id, first_name) VALUES (${tgId}, ${firstName})
     ON CONFLICT (tg_id) DO UPDATE SET first_name = coalesce(excluded.first_name, users.first_name)
-    RETURNING id, tg_id, first_name, status, created_at
+    RETURNING id, tg_id, first_name, created_at
   `);
 
   const row = result.rows?.[0];
@@ -35,7 +35,6 @@ export async function ensureUser(from) {
     id: row.id,
     tgId: row.tg_id,
     firstName: row.first_name ?? null,
-    status: row.status,
     createdAt: new Date(row.created_at * 1000),
   };
 }
@@ -43,6 +42,6 @@ export async function ensureUser(from) {
 /** The internal user for a Telegram id, or null if they never contacted us. */
 export async function getUserByTgId(tgId) {
   if (!Number.isInteger(tgId)) return null;
-  const row = await db.get(sql`SELECT id, tg_id, status FROM users WHERE tg_id = ${tgId}`);
-  return row ? { id: row.id, tgId: row.tg_id, status: row.status } : null;
+  const row = await db.get(sql`SELECT id, tg_id FROM users WHERE tg_id = ${tgId}`);
+  return row ? { id: row.id, tgId: row.tg_id } : null;
 }
