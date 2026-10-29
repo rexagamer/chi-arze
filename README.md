@@ -309,7 +309,7 @@ application code on every write.
 ## Tests
 
 ```bash
-npm test        # 122 tests, node:test only — no framework
+npm test        # 123 tests, node:test only — no framework
 npm run check   # parse every deployed module + resolve every import
 ```
 
@@ -328,7 +328,9 @@ and unsafe integers), search, duplicate submissions, the rate limit, summaries
 (median rules, contributors, staleness, rejected/pending exclusion), moderation
 transitions, admin authorisation, duplicate and self-flags, every command's happy
 and error paths, callback validation (malformed, oversized, forged, stale),
-unauthorised moderation, and database failures.
+unauthorised moderation, database failures, and one scripted walk through the
+whole user journey (`tests/acceptance.test.js`) that catches a broken seam
+between two otherwise-working features.
 
 **What the tests do not prove:** that Telegram delivers these messages. The suite
 calls the handlers directly with Bot API payloads and records the calls; nothing
@@ -350,6 +352,7 @@ was sent to a real chat. Delivery needs the manual checklist below.
 | `npm test` fails with `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite` | Local Node is older than 22.5, which the *tests* need. The deployed bot does not use `node:sqlite`. |
 | Everything throws `ERR_MODULE_NOT_FOUND: sdk` locally | Expected: `sdk` only exists inside the platform. Use `npx tgcloud run` or the test double. |
 | A migration would drop data | Stop. `migrate` prompts per change; use `--dry-run` first. Never run with `--yes` on a database you care about. |
+| `migrate` refuses to add `store_name` / `store_key` | Those columns are `NOT NULL`. A database that already holds rows needs them backfilled first (`UPDATE price_reports SET store_name = 'نامشخص', store_key = 'نامشخص' WHERE store_name IS NULL`) — a fresh database has no such rows. |
 
 Logs: handler failures go to `console.error` with the error code/description and
 never the user's message text. `npx tgcloud run` shows them locally; the platform
