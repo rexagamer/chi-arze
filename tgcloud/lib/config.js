@@ -6,13 +6,16 @@
 /**
  * Telegram user IDs allowed to moderate reports and seed the catalog.
  *
- * Empty by default: the bot works for everyone, nobody can moderate. Send
- * `/id` to the bot to learn your own numeric ID, then add it here and deploy.
- * Other people's IDs are personal data — keep them out of a public fork.
+ * This is the allowlist: only numeric Telegram IDs are ever checked (never a
+ * username or first name, both of which a user can change). Empty by default —
+ * the bot works for everyone and nobody can moderate until an ID is added here.
+ *
+ * Send `/id` to the bot to get your own ID, put it in this array, and redeploy
+ * (`npm run deploy`). See README → "Become an administrator".
  */
 export const ADMIN_IDS = [];
 
-/** Plausibility bounds for a single report, in toman. */
+/** Plausibility bounds for a single report, in toman. The unit is never rial. */
 export const PRICE_LIMITS = {
   min: 1_000,
   max: 100_000_000,
@@ -22,7 +25,8 @@ export const PRICE_LIMITS = {
 export const TEXT_LIMITS = {
   firstName: 64,
   storeName: 60,
-  city: 40,
+  sourceUrl: 200,
+  reviewNote: 200,
 };
 
 /** Products per page in `/products`. */
@@ -42,6 +46,50 @@ export const SEARCH = {
   results: 8,
   /** Hard cap on rows the database returns for ranking. */
   scanLimit: 60,
+};
+
+/** Submission rules, enforced against the database (not process memory). */
+export const REPORT_LIMITS = {
+  /** Reports one user may submit inside `windowHours`. */
+  perWindow: 5,
+  /** Rolling window for the per-user rate limit, in hours. */
+  windowHours: 24,
+  /**
+   * The same user reporting the same price for the same product at the same
+   * store inside this window is a duplicate. After it passes, they may report
+   * that price again — prices legitimately repeat over time.
+   */
+  duplicateWindowHours: 24,
+};
+
+/**
+ * How price summaries are built. Every rule that decides what is shown lives
+ * here, so the bot's honesty is a configuration question, not a code change.
+ */
+export const SUMMARY = {
+  /** Approved reports older than this are not counted (they are not "current"). */
+  recentDays: 90,
+  /** Most approved rows fetched for a median / sample; never the whole history. */
+  sampleSize: 50,
+  /** A median is only shown when this many distinct people reported. */
+  minContributorsForMedian: 3,
+  /** "This data is getting old" threshold, counted from the newest report. */
+  staleAfterDays: 30,
+  /** Approved reports listed under a product. */
+  recentReportsShown: 5,
+  /** Pending reports listed in the admin queue. */
+  pendingPageSize: 5,
+};
+
+/**
+ * Outlier hint for administrators. Deliberately weak: it only ever adds a
+ * warning, never changes a report's status, and stays silent on small samples.
+ */
+export const OUTLIER = {
+  /** Below this many approved reports, no comparison is made at all. */
+  minSample: 5,
+  /** A price this far from the median (as a fraction, e.g. 0.5 = 50%) is flagged. */
+  deviationRatio: 0.5,
 };
 
 export function isAdmin(userId) {

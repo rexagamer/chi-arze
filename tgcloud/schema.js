@@ -86,14 +86,20 @@ export const priceReports = table(
     productId: integer('product_id').notNull(),
     userId: integer('user_id').notNull(),
     priceToman: integer('price_toman').notNull(),
-    storeName: text('store_name'),
+    // `store_name` is shown exactly as the reporter typed it; `store_key` is the
+    // same text folded by `normalizeText`, used only to detect duplicate reports
+    // ("دیجی‌کالا" and "دیجی کالا" are the same store).
+    storeName: text('store_name').notNull(),
+    storeKey: text('store_key').notNull(),
     sourceUrl: text('source_url'),
     status: text('status').notNull().default('pending'),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .default(sql`(unixepoch())`),
-    // Moderation metadata: who decided, when, and why (the note is shown to the
-    // author when a report is rejected).
+    // Moderation metadata: who decided, when, and why. `reviewed_by` is the
+    // administrator's *Telegram* user id (the same value as in ADMIN_IDS), not an
+    // internal users.id: administrators are configured, not registered, so they
+    // may have no users row at all.
     reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
     reviewedBy: integer('reviewed_by'),
     reviewNote: text('review_note'),

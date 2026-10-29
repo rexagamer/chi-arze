@@ -162,26 +162,33 @@ Project-specific rules; read these before touching the bot.
   user-facing strings. Messages are sent with `parse_mode: 'HTML'`, so any
   user-supplied text goes through `escapeHtml` (`lib/format.js`) first.
 - **Money is whole toman.** `price_reports.price_toman` is an integer. Parse input
-  with `parseToman` + `priceRangeError` and display with `formatToman`
-  (`lib/input.js`, `lib/format.js`). Never store rial, floats or formatted strings.
-- **The catalog is a table, not code.** `lib/catalog-data.js` holds the seed list;
-  `lib/catalog.js` owns every query against `products`. Seed with the admin
-  `/seed` command only — never on a message, never on module load. It is
-  idempotent because `products.normalized_name` is UNIQUE.
-- **One normalization, one place** (`lib/normalize.js`). Never re-implement
-  digit/letter folding in another module; import `normalizeText` / `tokenize`.
-  Specifications must survive it: 20 W ≠ 25 W, 10,000 ≠ 20,000.
-- **Moderation states** are `pending` → `approved` | `rejected`; the `CHECK`
-  constraint and the admin workflow both enforce that set. New reports are
-  created `pending`: nothing is published as a price until it is approved.
-- **Integrity is application-level** (no foreign keys): validate `product_id` with
-  `getProductById()`, and delete a report's flags before the report.
-- **Admins** are the IDs in `lib/config.js` (`isAdmin`); the list is empty by
-  default. `/id` tells a user their own numeric ID.
-- **Callback data** is namespaced `<area>:<action>[:<arg>]` and stays under 64
-  bytes; constants and parsers live in `lib/keyboards.js`.
-- **Offline checks:** `npm run check` (parse + resolve every import) and
-  `npm test` (pure modules only — nothing that imports `sdk` can be unit-tested
-  locally). A handler can only be exercised for real with `npx tgcloud run
-  handlers/message '{…}'`, which needs a logged-in project.
+  with `parseToman` + `parsePrice` and display with `formatToman`. Never store
+  rial, floats or formatted strings, and never convert rial → toman.
+- **Admin allowlist:** the Telegram IDs in `lib/config.js` (`isAdmin`), checked in
+  **one place** — `handlers/message.js` gates every command in `ADMIN_COMMANDS`
+  before dispatch. Business functions in `lib/moderation.js` assume the caller is
+  already authorised; never add a new privileged command without adding it to that
+  set. Never authorise by username or first name.
+- **Business rules live in `config.js`**: price bounds, duplicate window, rate
+  limit, summary thresholds. Change behaviour there, not by hard-coding numbers.
+- **Raw SQL vs. the query builder:** `catalog.js` uses the builder; `reports.js`,
+  `moderation.js` and `users.js` use `sql` templates because they need aggregates,
+  `RETURNING`, and single-statement guards (rate limit, status transitions).
+  Raw rows are **not** type-converted — every read goes through a mapper
+  (`toReport`) so timestamps stay `Date`s.
+- **State machines are enforced by SQL, not by JS.** A decision is
+  `UPDATE … WHERE id = ? AND status = 'pending'`; the rate limit is
+  `INSERT … SELECT … WHERE count < limit`. Both are single statements so
+  concurrent invocations cannot race past them.
+- **One normalization, one place** (`lib/normalize.js`). Specifications must
+  survive it: 20 W ≠ 25 W, 10,000 ≠ 20,000.
+- **The catalog is a table, not code.** Seed with the admin `/seed` command only;
+  it is idempotent because `products.normalized_name` is UNIQUE.
+- **No foreign keys:** validate `product_id` with `getProductById()` and
+  `report_id` with `getReportById()` before writing anything that references them.
+- **Offline checks:** `npm run check` (parse + imports) and `npm test`. Database
+  logic is tested against real SQLite through the `sdk` double in
+  `tests/support/`; the DDL is generated from `schema.js`, so schema edits are
+  exercised automatically. Add a test there for any new rule; pure logic goes in
+  a plain `tests/*.test.js`.
 - `tests/` and `scripts/` sit outside `tgcloud/`, so they are never deployed.

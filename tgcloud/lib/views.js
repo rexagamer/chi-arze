@@ -1,14 +1,24 @@
 // Screens: compose data + Persian copy + keyboard into one message ready to send.
 //
-// Handlers stay routing-only, and the catalog page is built the same way whether
-// it was asked for by `/products 2` or by a "next page" button — the alternative
-// would be the same paging arithmetic written twice.
+// Handlers stay routing-only, and a screen is built the same way whoever asks
+// for it — `/products 2`, a "next page" button, `/product 5`.
 
-import { countActiveProducts, listActiveProducts, searchProducts } from './catalog.js';
-import { CATALOG_PAGE_SIZE } from './config.js';
+import { getProductById, countActiveProducts, listActiveProducts, searchProducts } from './catalog.js';
+import { CATALOG_PAGE_SIZE, SUMMARY } from './config.js';
 import { toPositiveInt } from './input.js';
 import { catalogPagination, mainMenu } from './keyboards.js';
-import { EMPTY_CATALOG, productListMessage, searchResultsMessage } from './text.js';
+import { countPendingReports, inspectReport, listPendingReports, moderationStats } from './moderation.js';
+import { approvedPriceSamples, productPriceSummary } from './reports.js';
+import { priceDeviation } from './summary.js';
+import {
+  EMPTY_CATALOG,
+  adminOverviewMessage,
+  inspectMessage,
+  pendingQueueMessage,
+  productListMessage,
+  productPriceMessage,
+  searchResultsMessage,
+} from './text.js';
 
 /** A catalog page, clamped to the pages that exist. `requestedPage` is 0-based. */
 export async function catalogPageView(requestedPage = 0) {
@@ -30,4 +40,61 @@ export async function catalogPageView(requestedPage = 0) {
 export async function searchView(query) {
   const products = await searchProducts(query);
   return { text: searchResultsMessage({ query, products }), keyboard: null };
+}
+
+/**
+ * The price page for one product: approved reports only, with how old the
+ * newest one is and how many people it came from. Returns null if the product
+ * does not exist, so the caller can say so.
+ */
+export async function productView(productId) {
+  const id = toPositiveInt(productId);
+  if (id == null) return null;
+
+  const product = await getProductById(id);
+  if (!product) return null;
+
+  const summary = await productPriceSummary(product.id);
+  return { text: productPriceMessage({ product, summary }), keyboard: null };
+}
+
+/**
+ * The moderation queue. Outlier hints are computed for the whole page in one
+ * extra query, never stored: they depend on today's approved prices.
+ */
+export async function pendingView() {
+  const reports = await listPendingReports({ limit: SUMMARY.pendingPageSize });
+  const total = await countPendingReports();
+
+  const samples = await approvedPriceSamples(reports.map((report) => report.productId));
+  const deviations = new Map();
+  for (const report of reports) {
+    const deviation = priceDeviation(report.priceToman, samples.get(report.productId) ?? []);
+    if (deviation?.isUnusual) deviations.set(report.id, deviation);
+  }
+
+  return { text: pendingQueueMessage({ reports, total, deviations }), keyboard: null };
+}
+
+/** `/admin`: the counts and the command list. No configuration is revealed. */
+export async function adminView() {
+  const stats = await moderationStats();
+  return { text: adminOverviewMessage(stats), keyboard: null };
+}
+
+/** One report in full, for a decision. Null when it does not exist. */
+export async function inspectView(reportId) {
+  const details = await inspectReport(reportId);
+  if (!details) return null;
+
+  const samples = await approvedPriceSamples([details.report.productId]);
+  const deviation = priceDeviation(
+    details.report.priceToman,
+    samples.get(details.report.productId) ?? [],
+  );
+
+  return {
+    text: inspectMessage({ ...details, deviation }),
+    keyboard: null,
+  };
 }

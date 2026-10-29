@@ -19,24 +19,28 @@ There is no server, container, worker, or external database:
 
 ```
 tgcloud/
-├─ schema.js              # tables: users, products, price_reports, report_flags
+├─ schema.js              # users, products, price_reports, report_flags
 ├─ handlers/
-│  ├─ message.js          # commands, and free text as a catalog search
+│  ├─ message.js          # command router (and the admin authorisation gate)
 │  └─ callback_query.js   # inline keyboard presses (menu, catalog paging)
 └─ lib/
    ├─ normalize.js        # THE normalization: Persian/Arabic folding, digits
    ├─ search.js           # pure query → LIKE patterns, ranking
    ├─ catalog.js          # products table: seed, list, search, lookup
    ├─ catalog-data.js     # the seed catalog + category labels (pure data)
+   ├─ report-input.js     # pure parsing/validation of /report input
+   ├─ reports.js          # submission, rate limit, price summaries (SQL)
+   ├─ moderation.js       # pending queue, approve/reject, flags (SQL)
+   ├─ summary.js          # pure statistics and reliability rules
    ├─ users.js            # Telegram user → internal user row
-   ├─ config.js           # admin IDs, price/text/search limits
+   ├─ config.js           # admin IDs, price/report/search limits
    ├─ input.js            # toman parsing, id parsing, validation
    ├─ format.js           # Persian digits, toman, relative time
    ├─ text.js             # every user-facing Persian string
    ├─ views.js            # composes data + copy + keyboard into a screen
    ├─ keyboards.js        # inline keyboards and callback-data contract
    └─ telegram.js         # HTML send/edit/answer helpers
-tests/                    # offline unit tests (never deployed)
+tests/                    # offline tests (never deployed), incl. an sdk double
 scripts/check.js          # offline parse + import-graph check
 docs/tgcloud-sdk.md       # platform SDK reference
 ```
@@ -62,119 +66,186 @@ npm run migrate           # tgcloud migrate
 # 4. Load the catalog: send /seed to the bot from an admin account (see below).
 ```
 
-### Become an administrator
+## Becoming an administrator
 
-Moderation and seeding are limited to the Telegram user IDs listed in
+Administrators are configured by **numeric Telegram user ID**, in
 `tgcloud/lib/config.js`:
 
 ```js
 export const ADMIN_IDS = [123456789];
 ```
 
-Send `/id` to the bot to get your numeric ID (Latin digits, ready to paste), add
-it, and redeploy. Nothing here is a secret — the bot token is managed by Telegram
-Serverless and never appears in this repository.
+Precise steps:
+
+1. Send `/id` to the bot. It replies with your ID in Latin digits, ready to paste.
+2. Add that number to the `ADMIN_IDS` array. Keep other people's IDs out of a
+   public fork.
+3. `npm run deploy`, then send `/admin` to confirm the panel opens.
+
+There is no environment variable, no secret and no token involved: the ID is a
+public number, and the bot token itself is managed by Telegram Serverless and
+never appears in this repository. Usernames and first names are never used for
+authorisation — both can be changed by the user at any time.
 
 ## Commands
 
-### In the bot
+### For everyone
 
 | Command | What it does |
 | --- | --- |
 | `/start` | Welcome, and registers the user |
-| `/products` | Browse the catalog, 6 per page; `/products 2` jumps to page 2 |
-| `/search <query>` | Search products, or just type the query |
-| `/help`, `/about` | How the bot works |
-| `/id` | Your numeric Telegram ID |
-| `/seed` | **Admin only.** Loads the catalog; safe to run repeatedly |
+| `/products` | Browse the catalog; `/products 2` jumps to page 2 |
+| `/search <query>` | Search products (plain text works too) |
+| `/product <id>` | Published prices for one product (`/price <id>` is an alias) |
+| `/report <id> \| <price> \| <store> \| [url]` | Submit a price report |
+| `/flag <report_id>` | Flag a published report as suspicious |
+| `/help`, `/about`, `/id` | Help, background, your Telegram ID |
+
+### For administrators
+
+| Command | What it does |
+| --- | --- |
+| `/admin` | Counts and the command list |
+| `/pending` | The moderation queue, oldest first |
+| `/inspect <id>` | One report in full: price, store, source, flags, outlier hint |
+| `/approve <id>` | Publish a pending report |
+| `/reject <id> [reason]` | Reject it, optionally recording a reason |
+| `/seed` | Load/refresh the catalog (idempotent) |
 
 ### In the terminal
 
 | Command | What it does |
 | --- | --- |
 | `npm run deploy` | Deploy changed modules (`tgcloud push`) |
-| `npm run migrate` | Apply pending schema changes to the database |
-| `npm run status` | Show local vs. deployed modules (offline) |
-| `npm run diff` | Line-by-line diff against the last known deploy (offline) |
-| `npm run check` | Parse every deployed module and verify its imports |
-| `npm test` | Unit-test the pure modules |
-| `npm run run -- handlers/message '{ chat: { id: 1 }, text: "/products" }'` | Execute a handler on the platform with local files |
+| `npm run migrate` | Apply pending schema changes |
+| `npm run status` / `npm run diff` | Local vs. deployed, offline |
+| `npm run check` | Parse every module and resolve every import |
+| `npm test` | Run the test suite |
+
+## Reporting rules
+
+`/report 5 | 4,850,000 | دیجی‌کالا | https://shop.example/p/12`
+
+The URL is optional. Everything is validated twice: shape in
+`lib/report-input.js` (pure), and storage rules in `lib/reports.js` (database).
+
+| Rule | Behaviour |
+| --- | --- |
+| Currency | **Toman only.** Rial amounts are rejected, never converted. Every message says تومان. |
+| Price format | Whole toman in Persian, Arabic-Indic or Latin digits; `4,850,000`, `۴٬۸۵۰٬۰۰۰` and `۱.۵ میلیون` are accepted. Decimals without a multiplier (`1250.5`), negatives, unsafe integers and non-numbers are rejected. |
+| Price bounds | 1,000 … 100,000,000 toman (`PRICE_LIMITS`). |
+| Product | Must exist and be active; the id is shown in `/products` and `/search` as `#N`. |
+| Store | Required, 1–60 characters, kept exactly as typed (only whitespace is tidied). |
+| Source URL | Optional, must be `http(s)`, ≤ 200 characters. **Never fetched** — it is supporting information, not proof. |
+| Duplicate | Same person + product + price + store within 24 h is refused; after that the same price may be reported again. |
+| Rate limit | 5 reports per 24 h per user, enforced in the database (see below). |
+| Initial status | Always `pending`. A report is never published on submission. |
+
+**The rate limit is one SQL statement**, so two simultaneous submissions cannot
+both slip past it:
+
+```sql
+INSERT INTO price_reports (…) SELECT …
+WHERE (SELECT COUNT(*) FROM price_reports WHERE user_id = ? AND created_at >= ?) < 5
+RETURNING id
+```
+
+There are no in-memory counters and no external service; the database is the
+only state, and it survives between invocations.
+
+## Price summaries
+
+`/product <id>` shows only **approved** reports from the last 90 days, read with
+a date filter and a row cap — never the whole history.
+
+The rules that decide what can be said:
+
+- **Median only with ≥ 3 distinct contributors.** Three reports from one person
+  are one opinion; the bot says how many people are missing instead.
+- **Range only with ≥ 2 contributors.**
+- **Pending reports are counted separately** and never mixed into the numbers.
+- **Rejected reports never appear.**
+- **Staleness:** if the newest approved report is older than 30 days, the page
+  says so.
+- No confidence percentages, no "verified" badge, and no claim that a shop has
+  stock at that price.
+
+## Moderation
+
+A report moves `pending → approved` or `pending → rejected`, once. Each decision
+is a single guarded update:
+
+```sql
+UPDATE price_reports SET status = 'approved', reviewed_at = unixepoch(), reviewed_by = ?
+WHERE id = ? AND status = 'pending' RETURNING id
+```
+
+so a repeated command or two administrators racing cannot decide the same report
+twice or change a decision already made.
+
+Flags (`/flag`) are a signal, not a verdict: one flag never changes a report's
+status, flags are unique per person per report (enforced by a UNIQUE index), and
+authors cannot flag their own report.
+
+**Outlier hint** (administrators only): with at least 5 recent approved reports
+for the product, a submission more than 50% away from the median is marked
+`⚠️ دور از میانه` in `/pending` and `/inspect`. It is advice for the reviewer —
+nothing is rejected automatically, and the reporter is told their price will be
+checked more carefully.
 
 ## Database
 
-Four tables, all in `tgcloud/schema.js`.
-
 | Table | Purpose |
 | --- | --- |
-| `users` | One row per Telegram account: `tg_id` (identity), first name, status, created at. |
-| `products` | The catalog: display name, **unique** normalized name, category, search keywords, active flag. |
-| `price_reports` | A report: product, user, integer toman, store, source URL, status, plus moderation metadata (reviewer, time, note). |
-| `report_flags` | "This looks wrong" votes: report, user, time. One per user per report. |
+| `users` | One row per Telegram account: `tg_id` (identity), first name, status. |
+| `products` | Catalog: name, **unique** normalized name, category, keywords, active flag. |
+| `price_reports` | id, product, user, integer toman, store name + folded store key, source URL, status, review metadata. |
+| `report_flags` | report, user, timestamp — unique per (report, user). |
 
-Constraints and indexes that exist for a reason:
-
-- `users.tg_id` — UNIQUE. Identity is the numeric Telegram ID, not a username.
-- `products.normalized_name` — UNIQUE. Makes seeding idempotent and makes a
-  duplicate product impossible, not just unlikely.
-- `price_reports (product_id, status, created_at)` — the product page.
-- `price_reports (user_id, created_at)` — "my reports".
-- `price_reports (status, created_at)` — the moderation queue.
-- `report_flags (report_id, user_id)` — UNIQUE, so a flag cannot be counted twice
-  (and it doubles as the index for "flags of this report").
-- `CHECK` constraints keep money positive, statuses in `pending|approved|rejected`,
-  user status in `active|blocked`, and product categories in the known set.
-
-There are **no foreign keys**: the platform runs SQLite with foreign keys off, so
-`product_id`, `user_id` and `report_id` are logical references validated in
-application code (`getProductById()` returns null for an unknown id).
+No foreign keys (the platform runs with them off): `product_id`, `user_id` and
+`report_id` are validated in application code. Indexes exist for the three real
+access patterns — product feed, per-user history, moderation queue.
 
 ### Schema changes are separate from code deploys
 
 ```bash
-npm run deploy            # uploads schema.js; reports what the DB would change
-npm run migrate           # reviews and applies those changes
+npm run deploy                 # uploads schema.js; reports what the DB would change
+npm run migrate                # reviews and applies those changes
 npm run migrate -- --dry-run   # preview only
 ```
 
-Nothing runs migrations at request time, and no handler ever creates or resets a
-table. Removing a table or column requires marking it `.deprecated('reason')` —
-this project has no destructive migrations.
+Nothing runs migrations at request time and no handler creates or resets a table.
 
 ### Catalog seeding
 
-The catalog is data, and it is loaded by an explicit administrator command:
+`/seed` (administrator only) inserts any product whose normalized name is not in
+the database yet. It is idempotent, contains no prices, and is the only way the
+catalog is written — never on a message, never on module load.
 
+## Tests
+
+```bash
+npm test          # the offline suite
+npm run check     # parse + import graph
 ```
-/seed
-```
 
-Why a command rather than an automatic step: `tgcloud migrate` only applies
-schema diffs (it has no data hook), and seeding from a message handler on first
-use would race. `/seed` is explicit, admin-only and **idempotent** — it inserts
-only products whose normalized name is not in the database yet, so it can be run
-after every deploy that adds products, and re-running it reports
-"already complete". It never touches prices: the catalog has none.
+`node --test` only, no test framework. Two layers:
 
-## Search
+- **Pure modules** (`normalize`, `search`, `report-input`, `summary`, `format`)
+  are tested directly.
+- **Database logic** runs against real SQLite via `node:sqlite`, with a small
+  `sdk` double (`tests/support/sdk.mjs`). The tables are created from
+  `tgcloud/schema.js` itself, so a missing UNIQUE index or CHECK constraint fails
+  a test instead of hiding — remove the flag index from `schema.js` and three
+  tests fail. That is what makes rate limits, duplicate detection, guarded status
+  changes and summaries testable without deploying.
 
-Queries and product names go through the same normalizer (`lib/normalize.js`):
-
-1. Arabic `ي`/`ك` → Persian `ی`/`ک`; `أ إ آ` → `ا`; `ة`/`ۀ` → `ه`; tatweel dropped.
-2. Persian `۰-۹` and Arabic-Indic `٠-٩` digits → Latin digits.
-3. Zero-width non-joiner/space → a word break; bidi marks and harakat dropped.
-4. Thousands separators between digits removed (`۱۰٬۰۰۰` and `10,000` → `10000`).
-5. Other punctuation → a space (`USB-C` ≡ `USB C`); whitespace collapsed; lowercased.
-
-Digits and letters are kept, so `۲۰ وات`/`۲۵ وات` and `۱۰۰۰۰`/`۲۰۰۰۰` stay
-different products. Every word of a query must match the normalized name or the
-keywords (brands and English terms live there), and results are ranked: exact
-name first, then name matches, then keyword-only matches. Filtering happens in
-SQL and is capped, so query cost does not grow with the catalog.
+The double is a double: it re-implements the query builder and only executes the
+raw-SQL paths as written. SDK-specific behaviour still has to be confirmed with
+`npx tgcloud run handlers/message '{ … }'`.
 
 ## Roadmap
 
-1. A product page: recent approved reports, how fresh they are, how much they agree.
-2. Submit a price report with validation and a confirmation step.
-3. "My reports", including pending and rejected ones with the reviewer's note.
-4. Flag a suspicious report.
-5. Administrator moderation queue: approve, reject with a reason, resolve flags.
+1. Product selection with buttons instead of typed ids.
+2. "My reports", including pending and rejected ones with the reviewer's note.
+3. Notify administrators when a report collects several flags.
