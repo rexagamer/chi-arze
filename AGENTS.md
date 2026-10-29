@@ -7,7 +7,8 @@ and true. For the full SDK reference (db, Bot API, fetch), see
 
 ## What this project is
 
-A **Telegram Mini App bot** running on Telegram's serverless platform. You write
+ChiArzeh (چی‌ارزه؟) — a **Persian Telegram bot** for community-reported prices of
+mobile accessories in Iran, running on Telegram's serverless platform. You write
 JavaScript modules (database schema, shared library code, update handlers); the
 platform runs them in a V8 isolate. The `tgcloud` CLI syncs this local project
 with the bot's cloud environment — think `wrangler`/`vercel` + `drizzle-kit`.
@@ -152,3 +153,31 @@ The platform manages the bot's webhook for you, derived from your deployed
 `handlers/*`, and refreshes it on `push`. If it ever drifts — e.g. someone called
 `setWebhook` with the raw bot token — `npx tgcloud webhook` shows the mismatch and
 `npx tgcloud webhook sync` repairs it.
+
+## ChiArzeh conventions
+
+Project-specific rules; read these before touching the bot.
+
+- **Persian copy lives in `tgcloud/lib/text.js`.** Handlers never inline
+  user-facing strings. Messages are sent with `parse_mode: 'HTML'`, so any
+  user-supplied text goes through `escapeHtml` (`lib/format.js`) first.
+- **Money is whole toman.** `price_reports.price_toman` is an integer. Parse input
+  with `parseToman` + `priceRangeError` and display with `formatToman`
+  (`lib/input.js`, `lib/format.js`). Never store rial, floats or formatted strings.
+- **The catalog is code, not a table** (`lib/catalog.js`). `price_reports.product_key`
+  stores a catalog `key`; keys are permanent — renaming one orphans old reports.
+  There is no seeding step, and the catalog never contains prices.
+- **Moderation states** are `pending` → `approved` | `rejected`. The `CHECK`
+  constraint in `schema.js` and the admin workflow both enforce that set. Only
+  `approved` reports are shown as prices; authors can also see their own pending
+  and rejected ones, with `review_note` explaining a rejection.
+- **Integrity is application-level** (no foreign keys): delete a report's
+  `report_flags` before the report, and resolve `product_key` via `getProduct()`.
+- **Admins** are the IDs in `lib/config.js` (`isAdmin`); the list is empty by
+  default. `/id` tells a user their own numeric ID.
+- **Callback data** is namespaced `<area>:<action>` (constants in
+  `lib/keyboards.js`) and must stay under 64 bytes.
+- **Offline checks:** `npm run check` (parse + resolve every import) and
+  `npm test` (pure modules only). Handlers run only on the platform —
+  `npx tgcloud run handlers/message '{ chat: { id: 1 }, text: "/start" }'`.
+- `tests/` and `scripts/` sit outside `tgcloud/`, so they are never deployed.
