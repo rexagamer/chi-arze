@@ -7,7 +7,8 @@ and true. For the full SDK reference (db, Bot API, fetch), see
 
 ## What this project is
 
-A **Telegram Mini App bot** running on Telegram's serverless platform. You write
+ChiArzeh (چی‌ارزه؟) — a **Persian Telegram bot** for community-reported prices of
+mobile accessories in Iran, running on Telegram's serverless platform. You write
 JavaScript modules (database schema, shared library code, update handlers); the
 platform runs them in a V8 isolate. The `tgcloud` CLI syncs this local project
 with the bot's cloud environment — think `wrangler`/`vercel` + `drizzle-kit`.
@@ -152,3 +153,42 @@ The platform manages the bot's webhook for you, derived from your deployed
 `handlers/*`, and refreshes it on `push`. If it ever drifts — e.g. someone called
 `setWebhook` with the raw bot token — `npx tgcloud webhook` shows the mismatch and
 `npx tgcloud webhook sync` repairs it.
+
+## ChiArzeh conventions
+
+Project-specific rules; read these before touching the bot.
+
+- **Persian copy lives in `tgcloud/lib/text.js`.** Handlers never inline
+  user-facing strings. Messages are sent with `parse_mode: 'HTML'`, so any
+  user-supplied text goes through `escapeHtml` (`lib/format.js`) first.
+- **Money is whole toman.** `price_reports.price_toman` is an integer. Parse input
+  with `parseToman` + `parsePrice` and display with `formatToman`. Never store
+  rial, floats or formatted strings, and never convert rial → toman.
+- **Admin allowlist:** the Telegram IDs in `lib/config.js` (`isAdmin`), checked in
+  **one place** — `handlers/message.js` gates every command in `ADMIN_COMMANDS`
+  before dispatch. Business functions in `lib/moderation.js` assume the caller is
+  already authorised; never add a new privileged command without adding it to that
+  set. Never authorise by username or first name.
+- **Business rules live in `config.js`**: price bounds, duplicate window, rate
+  limit, summary thresholds. Change behaviour there, not by hard-coding numbers.
+- **Raw SQL vs. the query builder:** `catalog.js` uses the builder; `reports.js`,
+  `moderation.js` and `users.js` use `sql` templates because they need aggregates,
+  `RETURNING`, and single-statement guards (rate limit, status transitions).
+  Raw rows are **not** type-converted — every read goes through a mapper
+  (`toReport`) so timestamps stay `Date`s.
+- **State machines are enforced by SQL, not by JS.** A decision is
+  `UPDATE … WHERE id = ? AND status = 'pending'`; the rate limit is
+  `INSERT … SELECT … WHERE count < limit`. Both are single statements so
+  concurrent invocations cannot race past them.
+- **One normalization, one place** (`lib/normalize.js`). Specifications must
+  survive it: 20 W ≠ 25 W, 10,000 ≠ 20,000.
+- **The catalog is a table, not code.** Seed with the admin `/seed` command only;
+  it is idempotent because `products.normalized_name` is UNIQUE.
+- **No foreign keys:** validate `product_id` with `getProductById()` and
+  `report_id` with `getReportById()` before writing anything that references them.
+- **Offline checks:** `npm run check` (parse + imports) and `npm test`. Database
+  logic is tested against real SQLite through the `sdk` double in
+  `tests/support/`; the DDL is generated from `schema.js`, so schema edits are
+  exercised automatically. Add a test there for any new rule; pure logic goes in
+  a plain `tests/*.test.js`.
+- `tests/` and `scripts/` sit outside `tgcloud/`, so they are never deployed.
