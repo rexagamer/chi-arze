@@ -103,17 +103,31 @@ export function parseSourceUrl(raw) {
     return { ok: false, error: 'URL_TOO_LONG', detail: { max: TEXT_LIMITS.sourceUrl } };
   }
 
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    return { ok: false, error: 'URL_INVALID' };
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return { ok: false, error: 'URL_INVALID' };
-  }
-  if (!url.hostname) return { ok: false, error: 'URL_INVALID' };
+  const parsed = splitHttpUrl(text);
+  return parsed ? { ok: true, value: parsed } : { ok: false, error: 'URL_INVALID' };
+}
 
-  // Stored canonicalised (lower-cased host, normalised path) but never resolved.
-  return { ok: true, value: url.toString() };
+/** `http://host` / `https://host` + anything, split into the three parts we keep. */
+const HTTP_URL = /^(https?):\/\/([^/?#\s]+)(.*)$/i;
+/** A host with at least one dot, no credentials, no spaces, no underscore-only TLD. */
+const HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::\d{1,5})?$/i;
+
+/**
+ * Canonicalise an http(s) link: lower-case scheme and host, keep the path,
+ * query and fragment exactly as typed.
+ *
+ * Deliberately hand-rolled. The runtime is a bare V8 isolate with no `URL`
+ * constructor (measured with `tgcloud run`), and a `try { new URL(...) } catch`
+ * would not crash — it would silently reject *every* link as invalid, which is
+ * worse than a loud failure. This keeps the rule visible and testable.
+ *
+ * This is shape-checking, not parsing: the value is stored and shown back to a
+ * moderator, never fetched or resolved.
+ */
+function splitHttpUrl(text) {
+  const match = HTTP_URL.exec(text);
+  if (!match) return null;
+  const [, scheme, host, rest] = match;
+  if (!HOST.test(host)) return null;
+  return `${scheme.toLowerCase()}://${host.toLowerCase()}${rest}`;
 }

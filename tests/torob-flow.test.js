@@ -64,6 +64,27 @@ test('a plain Persian message searches Torob and answers with real offers', asyn
   assert.match(text, /موجود بودن کالا تضمینی نیست/);
 });
 
+test('the request URL is built from language built-ins, in a stable order', async () => {
+  // Imported here, not at the top: the `sdk` resolution hooks are installed when
+  // the test app boots (see tests/support/app.mjs).
+  const { searchUrl, sellersUrl } = await import('../tgcloud/lib/torob-client.js');
+
+  // `URLSearchParams` does not exist in the runtime (measured with `tgcloud run`),
+  // so the encoding is `encodeURIComponent`: a space is %20, not +.
+  assert.equal(
+    searchUrl('شارژر سامسونگ', { size: 3 }),
+    'https://api.torob.com/v4/base-product/search/?page=0&size=3&q=%D8%B4%D8%A7%D8%B1%DA%98%D8%B1%20%D8%B3%D8%A7%D9%85%D8%B3%D9%88%D9%86%DA%AF',
+  );
+  assert.equal(
+    sellersUrl('d92e497e-52aa-4f6e-ba9e-26664ae2368f'),
+    'https://api.torob.com/v4/base-product/sellers/?prk=d92e497e-52aa-4f6e-ba9e-26664ae2368f&list_type=products_info',
+  );
+
+  // A query cannot smuggle its own parameters into the request.
+  assert.equal(searchUrl('a&size=999'), 'https://api.torob.com/v4/base-product/search/?page=0&size=8&q=a%26size%3D999');
+  assert.equal(searchUrl('#'), 'https://api.torob.com/v4/base-product/search/?page=0&size=8&q=%23');
+});
+
 test('every result carries a link to its Torob page and a sellers button', async () => {
   serve(SEARCH_FIXTURE);
   await send('/search شارژر سامسونگ');
