@@ -95,3 +95,50 @@ export const OUTLIER = {
 export function isAdmin(userId) {
   return typeof userId === 'number' && ADMIN_IDS.includes(userId);
 }
+
+/**
+ * Torob (torob.com) — the live price-comparison source the bot searches.
+ *
+ * Everything here was established by making real requests to the public web
+ * endpoints the Torob site itself uses (see README → "Live Torob search"):
+ *
+ *   search : GET https://api.torob.com/v4/base-product/search/?page=&size=&q=
+ *   sellers: GET https://api.torob.com/v4/base-product/sellers/?prk=&list_type=products_info
+ *
+ * They are undocumented and may change without notice; there is no official
+ * public search API and no key or account is involved. Every value below is a
+ * bound, so one user action can never turn into an unbounded upstream call.
+ */
+export const TOROB = {
+  origin: 'https://api.torob.com',
+  productPageBase: 'https://torob.com',
+
+  /** Products shown per search. The API returns a few more than asked (ads). */
+  resultsShown: 5,
+  /** Sellers shown per product. The endpoint always returns the full list. */
+  sellersShown: 5,
+  /** `size` we ask for upstream; it is a hint, extra rows are trimmed. */
+  requestSize: 8,
+
+  /**
+   * The upstream answers in milliseconds when it is healthy, but it is a public
+   * site with no SLA: a slow reply must not hold the whole update hostage.
+   */
+  timeoutMs: 9_000,
+  /**
+   * A hard ceiling on the body we are willing to parse, in UTF-16 code units —
+   * what `String#length` reports after the SDK has handed us text. Persian text
+   * costs two bytes per unit upstream, so this is roughly 12 MB on the wire.
+   */
+  maxResponseChars: 6_000_000,
+
+  /**
+   * Cached results are reused for this long. Short on purpose: prices move, and
+   * the point of the cache is only to stop identical searches — often the same
+   * few queries typed by different people — from hitting Torob again.
+   */
+  cacheTtlMinutes: 10,
+
+  /** A descriptive agent; the API is used politely, not disguised as a browser. */
+  userAgent: 'ChiArzehBot/1.0 (+https://torob.com; price search for a Telegram bot)',
+};

@@ -7,50 +7,53 @@ import { categoryLabel } from './catalog-data.js';
 import { escapeHtml, formatDate, formatRelativeTime, formatToman, toPersianDigits } from './format.js';
 
 export const START = `🎧 <b>چی‌ارزه؟</b>
-قیمت لوازم جانبی موبایل در ایران، از زبان خودِ خریدارها.
+قیمت لوازم جانبی موبایل در ایران: جست‌وجوی زنده در ترب، به‌علاوهٔ گزارش خریدارها.
 
-اینجا خریدارها قیمت واقعی شارژر، کابل، پاوربانک، هندزفری و بقیهٔ لوازم جانبی را با هم به اشتراک می‌گذارند.
+کافی است نام کالا را بنویسید؛ قیمت‌ها همان لحظه از ترب خوانده می‌شود و فروشنده‌ها را می‌بینید. لازم نیست چیزی ثبت کنید تا نتیجه بگیرید.
 
-• هیچ قیمتی را ما از خودمان نمی‌سازیم؛ همه از گزارش کاربران می‌آید.
-• هر گزارش پیش از انتشار بررسی می‌شود.
+• قیمت‌های جست‌وجو از ترب می‌آید و کنارشان نوشته شده است.
+• گزارش‌های کاربران جدا از ترب است و پیش از انتشار بررسی می‌شود.
 • کنار هر قیمت معلوم است که چه‌قدر تازه است.
 
-برای شروع، <b>📦 کالاها</b> را بزنید یا /products را بفرستید.
-جست‌وجو: <code>/search شارژر اپل</code>
-ثبت قیمت: <code>/report</code>`;
+همین حالا بنویسید: <code>شارژر سامسونگ ۲۵ وات</code>
+یا /search را بفرستید. ثبت قیمت (اختیاری): <code>/report</code>`;
 
 export const HELP = `<b>راهنما</b>
 
 /start — پیام خوش‌آمد
-/products — فهرست کالاها
-/search &lt;عبارت&gt; — جست‌وجوی کالا
-/product &lt;شماره&gt; — قیمت یک کالا
-/price &lt;شماره&gt; — همان صفحهٔ قیمت
+/search &lt;عبارت&gt; — جست‌وجو در ترب (همان کاری که هر متن ساده هم می‌کند)
+/price &lt;عبارت&gt; — همان جست‌وجو
+/products — فهرست کالاهای این ربات
+/catalog &lt;عبارت&gt; — جست‌وجو در همان فهرست
+/product &lt;شماره&gt; — صفحهٔ قیمت یک کالا از فهرست
 /report — ثبت قیمت خرید
 /flag &lt;شمارهٔ گزارش&gt; — علامت‌زدن گزارش مشکوک
 /help — همین راهنما
 /id — شناسهٔ تلگرام شما
 
-هر متنی هم که بدون دستور بفرستید، به‌عنوان جست‌وجو در فهرست کالاها بررسی می‌شود.
+هر متنی هم که بدون دستور بفرستید، به‌عنوان جست‌وجو به ترب می‌رود.
 
 <b>ثبت قیمت</b>
 <code>/report شناسهٔ کالا | قیمت به تومان | فروشگاه | لینک (اختیاری)</code>
 همهٔ قیمت‌ها به <b>تومان</b> است؛ ریال پذیرفته نمی‌شود.
 
 <b>دربارهٔ داده‌ها</b>
-همهٔ قیمت‌ها گزارش کاربران است، نه قیمت رسمی فروشگاه‌ها. هر گزارش پیش از انتشار بررسی می‌شود و قدیمی‌بودن هر عدد کنارش نوشته می‌شود.
+دو نوع قیمت دارید و هیچ‌وقت قاطی نمی‌شوند:
 
-این ربات قیمتی از خودش نمی‌سازد و هیچ فروشگاهی را هم خودکار نمی‌گردد.`;
+• <b>نتیجهٔ جست‌وجو</b> — از ترب خوانده می‌شود، با برچسب «از ترب» و ساعت خواندنش. ترب خودش قیمت را از فروشنده‌ها می‌گیرد؛ ما فقط همان را نمایش می‌دهیم.
+• <b>گزارش کاربر</b> — خرید واقعی کاربرهای همین ربات، که پیش از انتشار بررسی می‌شود و تاریخش کنارش می‌آید.
+
+این ربات نه قیمتی از خودش می‌سازد و نه قیمتی را تأیید می‌کند.`;
 
 export const ABOUT = `<b>دربارهٔ چی‌ارزه؟</b>
 
-«چی‌ارزه؟» یک فهرست مردمی از قیمت لوازم جانبی موبایل در ایران است. هدفش ساده است: پیش از خرید بدانید یک محصول در بازار واقعاً چند می‌ارزد.
+«چی‌ارزه؟» قیمت لوازم جانبی موبایل در ایران را نشان می‌دهد. هدفش ساده است: پیش از خرید بدانید یک محصول در بازار واقعاً چند می‌ارزد.
 
 <b>قاعده‌ها</b>
-• هر عدد یک گزارش کاربر است، نه قیمت رسمی فروشگاه.
-• گزارش‌ها پیش از انتشار بازبینی می‌شوند.
+• قیمت‌های جست‌وجو را ترب می‌دهد؛ ربات فقط نمایشش می‌دهد و برچسب «از ترب» می‌زند.
+• گزارش‌های کاربر پیش از انتشار بازبینی می‌شوند و جدا از نتیجهٔ ترب نمایش داده می‌شوند.
 • گزارش تکراری یا قدیمی حذف نمی‌شود تا خودتان بتوانید مقایسه کنید.
-• ما قیمتی نمی‌سازیم و هیچ سایتی را هم خودکار نمی‌گردیم.`;
+• ما قیمتی نمی‌سازیم و هیچ فروشگاهی را هم خودمان گشت نمی‌زنیم؛ فقط به جست‌وجوی شما در ترب نگاه می‌کنیم.`;
 
 export const NON_TEXT = `فعلاً فقط پیام متنی را می‌فهمم.
 برای دیدن راهنما /help را بفرستید.`;
@@ -102,7 +105,7 @@ export function productListMessage({ products, page, pageCount, total }) {
     ...lines,
     '',
     'برای دیدن قیمت‌ها، روی نام کالا بزنید.',
-    'جست‌وجو: <code>/search شارژر</code>',
+    'جست‌وجو در این فهرست: <code>/catalog شارژر</code>',
   ].join('\n');
 }
 
@@ -159,7 +162,7 @@ export const REPORT_USAGE = `<b>ثبت گزارش قیمت</b>
 <code>/report 5 | 4,850,000 | دیجی‌کالا | https://example.com/p/12</code>
 
 • قیمت را همیشه به <b>تومان</b> بنویسید؛ ریال پذیرفته نمی‌شود.
-• شناسهٔ کالا را از /products یا /search بردارید.
+• شناسهٔ کالا را از /products یا /catalog بردارید.
 • هر گزارش پیش از انتشار بررسی می‌شود و تا آن زمان در هیچ قیمتی حساب نمی‌شود.`;
 
 export const REPORT_FAILED = `ثبت گزارش ناموفق بود.
@@ -170,7 +173,7 @@ const REPORT_ERRORS = {
   TOO_MANY_FIELDS: () => `بخش‌های گزارش زیاد است.
 قالب درست: <code>/report شناسهٔ کالا | قیمت به تومان | نام فروشگاه | لینک (اختیاری)</code>`,
   PRODUCT_ID_INVALID: () =>
-    'شناسهٔ کالا باید یک عدد باشد؛ آن را از /products یا /search بردارید.',
+    'شناسهٔ کالا باید یک عدد باشد؛ آن را از /products یا /catalog بردارید.',
   PRICE_EMPTY: () => 'قیمت خالی است. قیمت را به تومان بنویسید؛ مثلاً <code>4,850,000</code>.',
   PRICE_INVALID: () =>
     'قیمت را به شکل یک عدد صحیح به <b>تومان</b> بنویسید (مثلاً <code>4850000</code> یا <code>۴٬۸۵۰٬۰۰۰</code>).\nعدد اعشاری و مبلغ ریالی پذیرفته نمی‌شود.',
@@ -332,7 +335,7 @@ export function REPORT_ID_REQUIRED(action = 'approve') {
 }
 
 export const PRODUCT_ID_REQUIRED = `شمارهٔ کالا را مشخص کنید.
-مثال: <code>/product 5</code> — شماره‌ها در /products و /search نمایش داده می‌شوند.`;
+مثال: <code>/product 5</code> — شماره‌ها در /products و /catalog نمایش داده می‌شوند.`;
 
 // ── Flags ────────────────────────────────────────────────────────────────────
 
@@ -446,3 +449,143 @@ export const TOAST_FAILED = 'انجام این کار ممکن نشد. کمی ب
 /** Last-resort message when a handler throws before it can reply. */
 export const GENERIC_ERROR = `مشکلی پیش آمد و این درخواست انجام نشد.
 کمی بعد دوباره تلاش کنید؛ اگر ادامه داشت /help را ببینید.`;
+
+// ── Live Torob search ────────────────────────────────────────────────────────
+// The primary experience: a query goes to Torob, offers come back. The copy here
+// has one job beyond readability — never imply that a number is live, official,
+// or verified by this bot. Torob's prices are given to us by Torob, and they
+// move; a cached answer is labelled as cached.
+
+export const TOROB_NEEDS_QUERY = `عبارت جست‌وجو را بنویسید.
+مثال: <code>شارژر سامسونگ 25 وات</code>`;
+
+export const TOROB_BAD_QUERY = `عبارت جست‌وجو باید شامل حرف یا رقم باشد.
+مثال: <code>شارژر سامسونگ</code>`;
+
+export function torobQueryTooLong(maxLength = SEARCH.maxQueryLength) {
+  return `عبارت جست‌وجو خیلی بلند است؛ حداکثر ${toPersianDigits(maxLength)} نویسه.
+نام کالا را کوتاه‌تر بنویسید.`;
+}
+
+const TOROB_ERRORS = {
+  TIMEOUT: 'پاسخ ترب دیر رسید و درخواست لغو شد.',
+  NETWORK: 'ارتباط با ترب برقرار نشد.',
+  RATE_LIMITED: 'ترب فعلاً تعداد درخواست‌ها را محدود کرده است.',
+  HTTP_STATUS: 'ترب به این جست‌وجو پاسخ نداد.',
+  BAD_CONTENT: 'پاسخ ترب خوانا نبود.',
+  BAD_JSON: 'پاسخ ترب قابل خواندن نبود.',
+  TOO_LARGE: 'پاسخ ترب بیش از حد بزرگ بود.',
+  UNEXPECTED_SHAPE: 'ساختار پاسخ ترب تغییر کرده است.',
+  BAD_PRODUCT_KEY: 'شناسهٔ کالا معتبر نیست.',
+};
+
+/**
+ * One Persian sentence for a failed lookup, plus what the user can do next.
+ * The upstream detail is logged, not shown: the user cannot act on a stack trace.
+ */
+export function torobErrorText(error) {
+  const reason = TOROB_ERRORS[error] ?? TOROB_ERRORS.NETWORK;
+  const retry = error === 'RATE_LIMITED' ? 'کمی بعد دوباره تلاش کنید.' : 'دوباره تلاش کنید.';
+  return `${reason}
+${retry}
+فهرست کالاهای خودمان هم در دسترس است: /products`;
+}
+
+/**
+ * A search answer.
+ *
+ * `results` are Torob's own ranking, including the paid slots it marks with
+ * `is_adv` — those are labelled, because a promoted product is not the same as a
+ * recommendation. Nothing is called "verified": the median and the shops are
+ * Torob's data, and the footer says so.
+ */
+export function torobSearchMessage({ query, products, totalCount, correctedQuery, cached, fetchedAt, now = new Date() }) {
+  const shown = escapeHtml(query);
+  const lines = [];
+
+  if (!products.length) {
+    lines.push(`🔎 برای «${shown}» در ترب چیزی پیدا نشد.`);
+    if (correctedQuery && correctedQuery !== query) {
+      lines.push(`منظورتان «${escapeHtml(correctedQuery)}» بود؟ همان را بنویسید.`);
+    }
+    lines.push('', 'عبارت دیگری را امتحان کنید یا فهرست کالاهای ما را ببینید: /products');
+    return lines.join('\n');
+  }
+
+  lines.push(`🔎 <b>نتایج «${shown}»</b>`);
+  const countText = totalCount ? ` از حدود ${toPersianDigits(totalCount)} کالا` : '';
+  lines.push(`<i>${toPersianDigits(products.length)} نتیجه${countText} — از ترب</i>`);
+  lines.push('');
+
+  products.forEach((product, index) => {
+    lines.push(`${toPersianDigits(index + 1)}. ${escapeHtml(product.name)}`);
+    lines.push(`    ${priceLine(product)}${shopLine(product)}${product.isAd ? ' · تبلیغ' : ''}`);
+  });
+
+  if (correctedQuery && correctedQuery !== query) {
+    lines.push('', `شاید منظورتان «${escapeHtml(correctedQuery)}» بوده باشد.`);
+  }
+
+  lines.push('', footerLine(cached, fetchedAt, now));
+  return lines.join('\n');
+}
+
+/** "۳٫۴۵۲٫۰۰۰ تومان" or an honest "قیمت نامشخص" — never a made-up number. */
+function priceLine(product) {
+  return product.priceToman == null ? '💰 قیمت نامشخص' : `💰 ${formatToman(product.priceToman)}`;
+}
+
+function shopLine(product) {
+  if (product.shopName) return ` — ${escapeHtml(product.shopName)}`;
+  if (product.shopCount) return ` — در ${toPersianDigits(product.shopCount)} فروشگاه`;
+  return '';
+}
+
+/**
+ * Where the numbers came from and how old they are. Cached answers say so: ten
+ * minutes is short, but "this was fetched a moment ago" is a claim, and a claim
+ * has to be true.
+ */
+function footerLine(cached, fetchedAt, now) {
+  const age = fetchedAt ? formatRelativeTime(fetchedAt, now) : null;
+  const freshness = cached && age ? `نتیجهٔ ذخیره‌شده از ${age}` : 'همین حالا از ترب گرفته شد';
+  return `${freshness}. قیمت‌ها ممکن است تا زمان خرید تغییر کنند و موجود بودن کالا تضمینی نیست.`;
+}
+
+/** One product's shops, cheapest first — the "who sells it and for how much". */
+export function torobSellersMessage({ productName, offers, totalOffers, cached, fetchedAt, now = new Date() }) {
+  const lines = [];
+  lines.push(`🛒 <b>${escapeHtml(productName ?? 'فروشنده‌ها')}</b>`);
+
+  if (!offers.length) {
+    lines.push('', 'ترب فروشنده‌ای برای این کالا نشان نمی‌دهد.');
+    lines.push('', 'کالای دیگری را جست‌وجو کنید.');
+    return lines.join('\n');
+  }
+
+  const total = totalOffers ?? offers.length;
+  const shown = toPersianDigits(offers.length);
+  const headline =
+    total > offers.length
+      ? `ارزان‌ترین ${shown} فروشنده از ${toPersianDigits(total)} فروشنده`
+      : `${shown} فروشنده`;
+  lines.push(`<i>${headline}</i>`, '');
+
+  offers.forEach((offer, index) => {
+    const parts = [`${toPersianDigits(index + 1)}. ${escapeHtml(offer.shopName)}`];
+    if (offer.city) parts.push(`(${escapeHtml(offer.city)})`);
+    parts.push(offer.priceToman == null ? '— قیمت نامشخص' : `— ${formatToman(offer.priceToman)}`);
+    if (!offer.available) parts.push('· ناموجود');
+    if (offer.priceUnreliable) parts.push('· قیمت نامعتبر اعلام‌شده');
+    if (offer.isAd) parts.push('· تبلیغ');
+    lines.push(parts.join(' '));
+  });
+
+  const age = fetchedAt ? formatRelativeTime(fetchedAt, now) : null;
+  const freshness = cached && age ? `ذخیره‌شده از ${age}` : 'همین حالا از ترب';
+  lines.push('', `${freshness}. برای دیدن همهٔ فروشنده‌ها و خرید، روی لینک کالا بزنید.`);
+  return lines.join('\n');
+}
+
+/** Button on a search answer and on a sellers screen: open the product on Torob. */
+export const TOROB_OPEN_ON_TOROB = 'مشاهده در ترب';

@@ -12,7 +12,29 @@
 
 import { DatabaseSync } from 'node:sqlite';
 
-export const state = { database: null, calls: [], failures: new Map() };
+export const state = {
+  database: null,
+  calls: [],
+  failures: new Map(),
+  /** Outbound HTTP is scripted per test; see `setFetchHandler`. */
+  fetchHandler: null,
+  fetches: [],
+};
+
+/**
+ * Script the next outbound HTTP calls.
+ *
+ * `handler(url, options)` returns (or resolves to):
+ *   { status?, body }  — `body` is a string or an object (JSON-serialised)
+ *   a rejected promise — a network-level failure
+ *   a promise that never settles — a timeout
+ *
+ * Nothing here reaches the network: the point of the double is to prove what the
+ * code does with a given answer, not to depend on a live service.
+ */
+export function setFetchHandler(handler) {
+  state.fetchHandler = handler;
+}
 
 /**
  * Make the next call to one Bot API method throw, so the "stale button" and
@@ -342,9 +364,33 @@ export const db = {
   get,
 };
 
-// Kept for import-compatibility with `sdk`.
-export const fetch = async () => {
-  throw new Error('fetch is not available in the test double');
+/** A scripted `fetch`: records the request, answers from `state.fetchHandler`. */
+export const fetch = async (url, options) => {
+  state.fetches.push({ url: String(url), options });
+  if (!state.fetchHandler) {
+    throw new Error('fetch was called but no handler was installed for this test');
+  }
+
+  const answer = await state.fetchHandler(String(url), options);
+  const status = answer.status ?? 200;
+  const body = typeof answer.body === 'string' ? answer.body : JSON.stringify(answer.body ?? null);
+  const used = { bodyRead: false };
+
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: String(status),
+    url: String(url),
+    headers: { get: () => 'application/json', has: () => true, keys: () => [], entries: () => [] },
+    async text() {
+      if (used.bodyRead) throw new TypeError('body used already');
+      used.bodyRead = true;
+      return body;
+    },
+    async json() {
+      return JSON.parse(await this.text());
+    },
+  };
 };
 export class InputFile {}
 export class EndpointError {}

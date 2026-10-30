@@ -30,7 +30,13 @@ import {
 } from '../lib/text.js';
 import { answerCallbackQuery, editHtml, sendHtml } from '../lib/telegram.js';
 import { ensureUser } from '../lib/users.js';
-import { catalogPageView, inspectView, pendingView, productView } from '../lib/views.js';
+import {
+  catalogPageView,
+  inspectView,
+  pendingView,
+  productView,
+  torobSellersView,
+} from '../lib/views.js';
 
 // Menu buttons that only swap the text of the current message.
 const MENU_VIEWS = new Map([
@@ -97,6 +103,12 @@ async function handle(query) {
 
     case 'flag':
       return flag(action.id, query.from);
+
+    // A Torob product key is re-validated by the parser and again by
+    // `sellerOffers`; the button carries nothing else, so there is nothing to
+    // trust beyond "this UUID came from a search we served".
+    case 'torobSellers':
+      return render(chatId, messageId, await torobSellersView(action.prk));
 
     case 'moderate':
       return moderate(chatId, messageId, action, query.from);

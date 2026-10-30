@@ -12,9 +12,14 @@ import {
   productKeyboard,
   productListKeyboard,
   searchResultsKeyboard,
+  torobResultsKeyboard,
+  torobRetryKeyboard,
+  torobSellersKeyboard,
 } from './keyboards.js';
 import { countPendingReports, inspectReport, listPendingReports, moderationStats } from './moderation.js';
 import { approvedPriceSamples, productPriceSummary } from './reports.js';
+import { sellerOffers, searchOffers } from './torob.js';
+import { formatToman } from './format.js';
 import { priceDeviation } from './summary.js';
 import {
   EMPTY_CATALOG,
@@ -24,6 +29,9 @@ import {
   productListMessage,
   productPriceMessage,
   searchResultsMessage,
+  torobErrorText,
+  torobSearchMessage,
+  torobSellersMessage,
 } from './text.js';
 
 /** A catalog page, clamped to the pages that exist. `requestedPage` is 0-based. */
@@ -112,5 +120,58 @@ export async function inspectView(reportId) {
     text: inspectMessage({ ...details, deviation }),
     // Only a pending report can still be decided; anything else gets the way back.
     keyboard: moderationKeyboard(details.report.status === 'pending' ? [details.report.id] : []),
+  };
+}
+
+
+// ── Live Torob search ────────────────────────────────────────────────────────
+// The search answer is built here and nowhere else: the handler resolves the
+// query, this decides what the user sees, `text.js` decides how it is worded.
+
+/**
+ * Search Torob and shape the answer.
+ *
+ * Every outcome is a renderable view — a successful list, an honest "nothing
+ * found", or the reason the lookup failed — so the handler never has to know
+ * what went wrong, only how to send a message.
+ */
+export async function torobSearchView(query) {
+  const result = await searchOffers(query);
+
+  if (!result.ok) {
+    return { text: torobErrorText(result.error), keyboard: torobRetryKeyboard() };
+  }
+
+  return {
+    text: torobSearchMessage(result),
+    keyboard: result.products.length ? torobResultsKeyboard(result.products) : torobRetryKeyboard(),
+  };
+}
+
+/**
+ * Who sells one product, and for how much.
+ *
+ * The product name is passed in by the caller when it has one (the search view
+ * does); this never looks a name up from Torob a second time just for a heading.
+ */
+export async function torobSellersView(prk, productName = null) {
+  const result = await sellerOffers(prk);
+
+  if (!result.ok) {
+    return { text: torobErrorText(result.error), keyboard: torobRetryKeyboard() };
+  }
+
+  // An empty list is a real answer ("Torob shows no shop for this"), different
+  // from a failure, so it goes through the same renderer as everything else.
+
+  return {
+    text: torobSellersMessage({
+      productName,
+      offers: result.offers,
+      totalOffers: result.totalOffers,
+      cached: result.cached,
+      fetchedAt: result.fetchedAt,
+    }),
+    keyboard: torobSellersKeyboard(prk),
   };
 }

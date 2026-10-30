@@ -7,8 +7,9 @@ and true. For the full SDK reference (db, Bot API, fetch), see
 
 ## What this project is
 
-ChiArzeh (چی‌ارزه؟) — a **Persian Telegram bot** for community-reported prices of
-mobile accessories in Iran, running on Telegram's serverless platform. You write
+ChiArzeh (چی‌ارزه؟) — a **Persian Telegram bot** that answers a product name with
+live prices from Torob, plus community-reported prices for a small curated
+catalog, running on Telegram's serverless platform. You write
 JavaScript modules (database schema, shared library code, update handlers); the
 platform runs them in a V8 isolate. The `tgcloud` CLI syncs this local project
 with the bot's cloud environment — think `wrangler`/`vercel` + `drizzle-kit`.
@@ -170,6 +171,23 @@ Project-specific rules; read these before touching the bot.
   a callback can be forged and never passes through the router. Business functions
   in `lib/moderation.js` assume the caller is already authorised. Never authorise
   by username or first name, and never by anything carried in `callback_data`.
+- **The primary path is live search, not the catalog.** A plain message or
+  `/search` goes to Torob through `lib/torob.js` → `lib/torob-client.js`; the
+  catalog is what `/catalog`, `/products`, `/product <id>` and price reports use.
+  `/start` and `/help` must keep working without either.
+- **Torob data and community data never mix in one answer.** A Torob result is
+  labelled `از ترب` and carries its fetch time; a report is labelled as a user
+  report. No Torob number is ever called verified, and no fetched price is ever
+  written to `price_reports`.
+- **The Torob endpoints are undocumented.** `torob-parse.js` is the only module
+  that knows their shape; every field is treated as optional, an unexpected
+  envelope returns `UNEXPECTED_SHAPE` instead of throwing, and a parser change
+  belongs there, never in the handler. Never add an endpoint, parameter or field
+  that has not been observed in a real response.
+- **One upstream request per search, best effort.** `torob-client.js` is the only
+  module that calls `fetch`; it sets a timeout (race, since the SDK documents no
+  abort), caps the response size, and never retries. A cached answer is a
+  different answer: the footer says «ذخیره‌شده از …». Failures are never cached.
 - **Business rules live in `config.js`**: price bounds, duplicate window, rate
   limit, summary thresholds. Change behaviour there, not by hard-coding numbers.
 - **Raw SQL vs. the query builder:** `catalog.js` uses the builder; `reports.js`,

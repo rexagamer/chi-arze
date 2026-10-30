@@ -10,6 +10,7 @@ import { SEARCH, isAdmin } from '../lib/config.js';
 import { approveReport, flagReport, rejectReport } from '../lib/moderation.js';
 import { toPositiveInt } from '../lib/input.js';
 import { mainMenu } from '../lib/keyboards.js';
+import { normalizeText } from '../lib/normalize.js';
 import { parseReportInput } from '../lib/report-input.js';
 import { recentApprovedPrices, submitReport } from '../lib/reports.js';
 import { priceDeviation } from '../lib/summary.js';
@@ -25,13 +26,16 @@ import {
   REPORT_ID_REQUIRED,
   SEARCH_EMPTY_QUERY,
   SEED_FAILED,
+  TOROB_BAD_QUERY,
+  TOROB_NEEDS_QUERY,
   START,
   decisionMessage,
   flagResultMessage,
   reportErrorText,
   reportSubmittedMessage,
-  seedResultMessage,
   searchQueryTooLong,
+  seedResultMessage,
+  torobQueryTooLong,
   unknownCommand,
   yourIdMessage,
 } from '../lib/text.js';
@@ -44,6 +48,8 @@ import {
   pendingView,
   productView,
   searchView,
+  torobSearchView,
+  torobSellersView,
 } from '../lib/views.js';
 
 /** Administrator-only commands. Checked once, in the router, before dispatch. */
@@ -59,9 +65,14 @@ const COMMANDS = new Map([
       sendHtml(message.chat.id, yourIdMessage(message.from?.id, isAdmin(message.from?.id))),
   ],
   ['products', products],
+  // `/search` and plain text both go to Torob — the live source is the product.
   ['search', (message, args) => search(message, args)],
+  ['price', (message, args) => search(message, args)],
+  // `/catalog` searches the small curated list this bot owns, whose products
+  // are the ones community price reports attach to.
+  ['catalog', (message, args) => catalogSearch(message, args)],
+  // `/product <id>` is that curated product's community page.
   ['product', product],
-  ['price', product], // alias: the price page for one product
   ['report', report],
   ['flag', flag],
   ['seed', seed],
@@ -150,15 +161,26 @@ async function products(message, args) {
   return sendHtml(message.chat.id, view.text, view.keyboard);
 }
 
-/** `/search <query>`, and any plain text. */
+/**
+ * `/search <query>`, `/price <query>`, and any plain text.
+ *
+ * This is the bot's primary path: the query goes to Torob, and the answer is
+ * whatever Torob actually returned. The old catalog is not consulted first —
+ * a user must never have to browse a list of our products to get a price.
+ *
+ * The query is validated before anything leaves the process: non-empty, under
+ * the length cap, and containing at least one letter or digit, so a message of
+ * punctuation cannot become an upstream request.
+ */
 async function search(message, rawQuery) {
   const query = String(rawQuery ?? '').trim();
-  if (!query) return sendHtml(message.chat.id, SEARCH_EMPTY_QUERY);
+  if (!query) return sendHtml(message.chat.id, TOROB_NEEDS_QUERY);
   if (query.length > SEARCH.maxQueryLength) {
-    return sendHtml(message.chat.id, searchQueryTooLong(SEARCH.maxQueryLength));
+    return sendHtml(message.chat.id, torobQueryTooLong(SEARCH.maxQueryLength));
   }
+  if (!normalizeText(query)) return sendHtml(message.chat.id, TOROB_BAD_QUERY);
 
-  const view = await searchView(query);
+  const view = await torobSearchView(query);
   return sendHtml(message.chat.id, view.text, view.keyboard);
 }
 
@@ -169,6 +191,18 @@ async function product(message, args) {
 
   const view = await productView(id);
   if (!view) return sendHtml(message.chat.id, reportErrorText({ error: 'PRODUCT_NOT_FOUND' }));
+  return sendHtml(message.chat.id, view.text, view.keyboard);
+}
+
+/** `/catalog <query>` — search our own curated products (not Torob). */
+async function catalogSearch(message, rawQuery) {
+  const query = String(rawQuery ?? '').trim();
+  if (!query) return sendHtml(message.chat.id, SEARCH_EMPTY_QUERY);
+  if (query.length > SEARCH.maxQueryLength) {
+    return sendHtml(message.chat.id, searchQueryTooLong(SEARCH.maxQueryLength));
+  }
+
+  const view = await searchView(query);
   return sendHtml(message.chat.id, view.text, view.keyboard);
 }
 

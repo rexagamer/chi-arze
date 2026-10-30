@@ -227,14 +227,11 @@ test('the product page shows a median only with enough contributors', async () =
   assert.match(text, /۳ گزارش از ۳ نفر/);
 });
 
-test('/price is an alias for the product price page', async () => {
+test('/product renders the same page for the catalogue and for a button', async () => {
   const one = await report(1, 1_000_000, 'الف');
   await app.moderation.approveReport(one.report.id, 2002);
 
-  await app.message(message(1001, 1001, '/price 1'));
-  const viaAlias = lastText();
-
   await app.message(message(1001, 1001, '/product 1'));
-  assert.equal(viaAlias, lastText());
-  assert.match(viaAlias, /۱ گزارش از ۱ نفر/);
+  assert.match(lastText(), /۱ گزارش از ۱ نفر/);
+  assert.match(lastText(), /۱٬۰۰۰٬۰۰۰ تومان/);
 });

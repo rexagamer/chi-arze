@@ -133,3 +133,20 @@ export const reportFlags = table(
     oneFlagPerUser: uniqueIndex('uidx_report_flags_report_user').on(t.reportId, t.userId),
   }),
 );
+
+// A short-lived cache of Torob responses, so the same search typed by different
+// people — or the same button pressed twice — does not become a second upstream
+// request. Deliberately tiny: a key, the parsed rows as JSON, and when they were
+// fetched. Errors are never stored, and `torob.js` treats an older row as a miss.
+//
+// The rows kept here are the *parsed* products/offers, not the raw payload: the
+// raw sellers response is several megabytes, this is a few hundred bytes.
+export const torobCache = table('torob_cache', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  // "search:<normalized query>" or "sellers:<product key>".
+  cacheKey: text('cache_key').notNull().unique(),
+  payload: text('payload').notNull(),
+  fetchedAt: integer('fetched_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
