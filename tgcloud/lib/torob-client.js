@@ -5,6 +5,14 @@
 // caches (that is `torob.js`). The job of this module is to make a network call
 // that can *only* do bounded work: one attempt, a hard timeout, a byte ceiling,
 // and never a retry loop that could turn a slow upstream into a flood.
+//
+// THE RUNTIME IS NOT A BROWSER. It is a bare V8 isolate: language built-ins
+// (`encodeURIComponent`, `JSON`, `Date`, `Promise`) exist, host APIs do not.
+// Measured with `tgcloud run`, `URL`, `URLSearchParams`, `setTimeout`,
+// `clearTimeout` and `queueMicrotask` are all `undefined`. Everything below is
+// written against that measured surface — no `URL`, no timers as a hard
+// requirement — because a missing global throws at call time, before any request
+// is made, and the user just sees a generic error.
 
 import { fetch } from 'sdk';
 import { TOROB } from './config.js';
@@ -13,15 +21,24 @@ import { TOROB } from './config.js';
 const timeoutMs = () => TOROB.timeoutMs;
 
 /**
- * A `Request`-like cancellation that works whatever the runtime supports.
+ * Can this runtime keep time? Measured, not assumed: the isolate has no
+ * `setTimeout`, so on the platform this is false and requests run unbounded.
+ */
+export const hasTimers = () => typeof setTimeout === 'function' && typeof clearTimeout === 'function';
+
+/**
+ * Bound a promise with a timer — when the runtime has timers.
  *
- * `AbortSignal` is not documented for the platform's `fetch`, so the timeout is
- * enforced by racing the request against a timer rather than by trusting the
- * signal. The losing promise is left to settle on its own — an invocation that
- * has already answered is finished either way — and `.catch` keeps an abandoned
- * rejection from escaping as an unhandled rejection.
+ * `AbortSignal` is not documented for the platform's `fetch`, so the timeout is a
+ * race rather than a signal. The losing promise is left to settle on its own — an
+ * invocation that has already answered is finished either way.
+ *
+ * Without timers the promise is returned unchanged. A missing deadline is a
+ * smaller problem than every request failing before it starts: the platform's own
+ * request timeout still applies, and the caller reports the failure it gets.
  */
 function withTimeout(promise) {
+  if (!hasTimers()) return promise;
   let timer;
   const timeout = new Promise((_resolve, reject) => {
     timer = setTimeout(() => reject(Object.assign(new Error('torob timeout'), { code: 'TIMEOUT' })), timeoutMs());
@@ -29,16 +46,34 @@ function withTimeout(promise) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * `application/x-www-form-urlencoded`, from built-ins only.
+ *
+ * `encodeURIComponent` turns a space into `%20`, where `URLSearchParams` would
+ * use `+`. Both are valid in a query string and Torob accepts either; `%20` has
+ * the advantage of never being confused with a literal plus sign in a query.
+ */
+function formEncode(pairs) {
+  return pairs
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+}
+
 /** The search URL for a query. `q` is the parameter the API actually honours. */
 export function searchUrl(query, { page = 0, size = TOROB.requestSize } = {}) {
-  const params = new URLSearchParams({ page: String(page), size: String(size), q: query });
-  return `${TOROB.origin}/v4/base-product/search/?${params.toString()}`;
+  return `${TOROB.origin}/v4/base-product/search/?${formEncode([
+    ['page', page],
+    ['size', size],
+    ['q', query],
+  ])}`;
 }
 
 /** The sellers URL for one product key. */
 export function sellersUrl(prk) {
-  const params = new URLSearchParams({ prk, list_type: 'products_info' });
-  return `${TOROB.origin}/v4/base-product/sellers/?${params.toString()}`;
+  return `${TOROB.origin}/v4/base-product/sellers/?${formEncode([
+    ['prk', prk],
+    ['list_type', 'products_info'],
+  ])}`;
 }
 
 /**

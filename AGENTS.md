@@ -219,6 +219,16 @@ Project-specific rules; read these before touching the bot.
   (never the user's text) with `console.error`, and reply with one Persian
   sentence. A callback is *always* answered, even when it is refused, or the
   spinner never stops.
+- **The runtime is a bare V8 isolate, not Node.** Measured with `npx tgcloud run`:
+  no `URL`, `URLSearchParams`, `setTimeout`, `clearTimeout`, `queueMicrotask`,
+  `structuredClone`, `process`; `encodeURIComponent`, `JSON`, `Date`, `Promise`,
+  `TextEncoder`, `crypto` are present. No dynamic `import()` either ("Not
+  supported"). So: build query strings with `encodeURIComponent` by hand, treat
+  timers as optional (`typeof setTimeout === 'function'`), and keep every import
+  static. Node is more capable than production, which is how a `new URLSearchParams`
+  in `torob-client.js` passed 160 local tests and failed on the first real
+  message — `tests/runtime-limits.test.js` runs the flow with those globals
+  deleted to stop that recurring.
 - **Offline checks:** `npm run check` (parse + imports) and `npm test`. Database
   logic is tested against real SQLite through the `sdk` double in
   `tests/support/`; the DDL is generated from `schema.js`, so schema edits are

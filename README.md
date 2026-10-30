@@ -77,8 +77,9 @@ tgcloud/                     ← everything here is deployed
    └─ telegram.js            ← sendMessage / editMessageText / answerCallbackQuery
 
 tests/                       ← never deployed
-├─ *.test.js                 ← 160 tests (`npm test`)
-└─ support/{sdk,app,hooks}.mjs ← a SQLite-backed double of the platform SDK
+├─ *.test.js                 ← 166 tests (`npm test`)
+├─ support/{sdk,app,hooks}.mjs ← a SQLite-backed double of the platform SDK
+└─ support/constrained-runtime.mjs ← the same flow with the isolate's missing globals deleted
 
 scripts/check.js             ← parse + import-graph check (`npm run check`)
 docs/tgcloud-sdk.md          ← platform SDK reference (shipped with the CLI)
@@ -274,6 +275,16 @@ absent price is `قیمت نامشخص`, never `0`.
    «ارتباط با ترب برقرار نشد» and `/catalog` keeps working.
 4. Rate limiting is honour-based: one request per search, an answer from cache
    where possible, no parallelism, no polling.
+5. **The runtime is a bare V8 isolate, not Node** — and that shipped a bug once.
+   Measured with `npx tgcloud run`, it has **no `URL`, `URLSearchParams`,
+   `setTimeout`, `clearTimeout`, `queueMicrotask`, `structuredClone` or
+   `process`**. `encodeURIComponent`, `JSON`, `Date`, `Promise`, `TextEncoder`
+   and `crypto` are there. The first version of `searchUrl()` used
+   `new URLSearchParams(...)`, which threw before any request was made, and 160
+   green local tests said nothing — Node has the global that the platform does
+   not. The fix is to build query strings with `encodeURIComponent` and to treat
+   timers as optional. `tests/runtime-limits.test.js` now runs the whole flow in
+   a child process with those globals deleted, so the gap cannot reopen quietly.
 
 If Torob is unreachable, the bot degrades: the error text names the failure and
 points at `/products`. Nothing else in the bot depends on the network.
@@ -373,7 +384,7 @@ application code on every write.
 ## Tests
 
 ```bash
-npm test        # 160 tests, node:test only — no framework
+npm test        # 166 tests, node:test only — no framework
 npm run check   # parse every deployed module + resolve every import
 ```
 
@@ -415,6 +426,7 @@ was sent to a real chat. Delivery needs the manual checklist below.
 | Prices show "برای نمایش میانه دست‌کم ۳ نفر…" | Working as intended: fewer than 3 distinct contributors. |
 | `npm test` fails with `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite` | Local Node is older than 22.5, which the *tests* need. The deployed bot does not use `node:sqlite`. |
 | Everything throws `ERR_MODULE_NOT_FOUND: sdk` locally | Expected: `sdk` only exists inside the platform. Use `npx tgcloud run` or the test double. |
+| A feature works in tests but the bot answers «مشکلی پیش آمد» | Almost always a host API: the isolate has no `URL`, `URLSearchParams` or timers, and a missing global throws before the feature's own error handling runs. `npx tgcloud run` any module and log `typeof` — see the runtime note under *Live search (Torob)*. |
 | A migration would drop data | Stop. `migrate` prompts per change; use `--dry-run` first. Never run with `--yes` on a database you care about. |
 | `migrate` refuses to add `store_name` / `store_key` | Those columns are `NOT NULL`. A database that already holds rows needs them backfilled first (`UPDATE price_reports SET store_name = 'نامشخص', store_key = 'نامشخص' WHERE store_name IS NULL`) — a fresh database has no such rows. |
 
