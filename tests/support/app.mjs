@@ -7,7 +7,7 @@
 import { register } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 
-import { calls, schemaDdl, state } from './sdk.mjs';
+import { calls, schemaDdl, setFetchHandler, state } from './sdk.mjs';
 
 register('./hooks.mjs', import.meta.url);
 
@@ -53,16 +53,22 @@ export async function createTestApp() {
       views,
       keyboards,
       calls,
+      fetches: state.fetches,
+      setFetchHandler,
     };
   }
 
   // Every test starts from an empty database and a clean call log.
-  for (const name of ['report_flags', 'price_reports', 'products', 'users']) {
+  for (const name of ['torob_cache', 'report_flags', 'price_reports', 'products', 'users']) {
     booted.database.exec(`DELETE FROM "${name}"`);
   }
-  booted.database.exec("DELETE FROM sqlite_sequence WHERE name IN ('users','products','price_reports','report_flags')");
+  booted.database.exec(
+    "DELETE FROM sqlite_sequence WHERE name IN ('users','products','price_reports','report_flags','torob_cache')",
+  );
   calls.length = 0;
   state.failures.clear();
+  state.fetchHandler = null;
+  state.fetches.length = 0;
   return booted;
 }
 
@@ -72,7 +78,7 @@ export async function createTestApp() {
  * crashing — the next test must start from a working schema again.
  */
 export function restoreSchema() {
-  for (const name of ['report_flags', 'price_reports', 'products', 'users']) {
+  for (const name of ['torob_cache', 'report_flags', 'price_reports', 'products', 'users']) {
     booted.database.exec(`DROP TABLE IF EXISTS "${name}"`);
   }
   for (const statement of booted.statements) booted.database.exec(statement);

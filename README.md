@@ -19,10 +19,15 @@ says how old the numbers are and how many people stand behind them.
 
 Implemented, working, and tested:
 
-- **Persian catalog** of 38 mobile accessories across 10 categories.
-- **Search** that folds Persian/Arabic spelling, ZWNJ, diacritics and Persian,
-  Arabic-Indic or Latin digits — `آيفون`, `آیفون` and `ایفون` are one query, and
-  specs survive normalization (`20 W` ≠ `25 W`, `10,000` ≠ `20,000`).
+- **Live product search.** Any plain message (`شارژر سامسونگ 25 وات`) or
+  `/search …` is normalized, sent to Torob, and answered with up to five
+  products, their price, the cheapest shop (or how many shops have it), a link
+  and a button that lists the individual sellers. No sign-up, no report needed.
+- **Persian catalog** of 38 mobile accessories across 10 categories, the things
+  community price reports attach to; searched with `/catalog`.
+- **Catalog search** that folds Persian/Arabic spelling, ZWNJ, diacritics and
+  Persian, Arabic-Indic or Latin digits — `آيفون`, `آیفون` and `ایفون` are one
+  query, and specs survive normalization (`20 W` ≠ `25 W`, `10,000` ≠ `20,000`).
 - **Inline keyboards** for browsing, opening a product, paging, flagging a
   report, and approving or rejecting one.
 - **Price reporting** in toman only, validated twice (shape and database).
@@ -37,8 +42,8 @@ Implemented, working, and tested:
 - **Administrator allowlist** by numeric Telegram ID, checked in one place.
 - **Error handling** that answers in Persian and logs the detail.
 
-Not implemented (deliberately): a Mini App, price scraping, paid APIs, reputations
-or dispute threads, and any background job.
+Not implemented (deliberately): a Mini App, page scraping, paid APIs, third-party
+scraping services, proxies, reputations or dispute threads, and any background job.
 
 ---
 
@@ -57,7 +62,10 @@ tgcloud/                     ← everything here is deployed
    ├─ report-input.js        ← pure /report parsing → values or error codes
    ├─ summary.js             ← pure statistics and reliability rules
    ├─ format.js              ← Persian digits, toman, Jalali dates, HTML escaping
-   ├─ search.js              ← pure query → LIKE patterns + ranking
+   ├─ torob-client.js        ← the only HTTP in the repo: GET + error codes
+   ├─ torob-parse.js         ← pure Torob JSON → offers (no network, no SQL)
+   ├─ torob.js               ← cache → client → parser; TTL, no error caching
+   ├─ search.js              ← pure query → LIKE patterns + ranking (catalog)
    ├─ catalog-data.js        ← the seed catalog (data only, no prices)
    ├─ catalog.js             ← products table: seed, list, search, lookup
    ├─ reports.js             ← submission, rate limit, summaries (SQL)
@@ -69,7 +77,7 @@ tgcloud/                     ← everything here is deployed
    └─ telegram.js            ← sendMessage / editMessageText / answerCallbackQuery
 
 tests/                       ← never deployed
-├─ *.test.js                 ← 122 tests (`npm test`)
+├─ *.test.js                 ← 160 tests (`npm test`)
 └─ support/{sdk,app,hooks}.mjs ← a SQLite-backed double of the platform SDK
 
 scripts/check.js             ← parse + import-graph check (`npm run check`)
@@ -188,9 +196,11 @@ npx tgcloud run handlers/message '{"message_id":1,"chat":{"id":123},"from":{"id"
 | `/help` | Commands, reporting syntax, data rules |
 | `/about` | What the bot is and what it does not do |
 | `/id` | Your numeric Telegram ID (for `ADMIN_IDS`) |
-| `/products [page]` | Browse the catalog; each product is a button |
-| `/search <query>` | Search; plain text without a command searches too |
-| `/price <product_id>` | Published prices for one product (alias: `/product`) |
+| `/search <query>` | Search Torob; a plain message without a command does the same |
+| `/price <query>` | Same as `/search` |
+| `/products [page]` | Browse this bot's own catalog; each product is a button |
+| `/catalog <query>` | Search that catalog (never Torob) |
+| `/product <product_id>` | Published community prices for one catalog product |
 | `/report <id> \| <price> \| <store> \| [url]` | Submit a price |
 | `/flag <report_id>` | Flag a published report as suspicious |
 
@@ -211,6 +221,8 @@ npx tgcloud run handlers/message '{"message_id":1,"chat":{"id":123},"from":{"id"
 | --- | --- | --- |
 | a product name | `product:<id>` | opens its price page |
 | « / » | `catalog:page:<n>` | pages the catalog |
+| 🛒 فروشنده‌ها (N) | `torob:sellers:<prk>` | lists the shops selling that Torob product |
+| مشاهده در ترب | URL button | opens `https://torob.com/p/<prk>/` |
 | 🚩 | `flag:<report_id>` | flags that report |
 | ✅ / 🗑 | `mod:approve:<id>` / `mod:reject:<id>` | decides a pending report (**administrators only**) |
 | « صف بررسی | `mod:queue:0` | reopens the queue (**administrators only**) |
@@ -219,6 +231,52 @@ npx tgcloud run handlers/message '{"message_id":1,"chat":{"id":123},"from":{"id"
 Every press is re-validated: the shape of the payload, the existence of the
 row, the state transition, and — for moderation — that the presser is in
 `ADMIN_IDS`. A forged `mod:approve:1` from a normal account changes nothing.
+
+---
+
+## Live search (Torob)
+
+A query takes one path: `handlers/message.js` validates it, `torob.js` looks in
+`torob_cache`, otherwise `torob-client.js` calls Torob and `torob-parse.js`
+normalizes the answer.
+
+| Item | Value |
+| --- | --- |
+| Endpoint (search) | `https://api.torob.com/v4/base-product/search/?page=0&size=8&q=<query>` |
+| Endpoint (sellers) | `https://api.torob.com/v4/base-product/sellers/?prk=<prk>&list_type=products_info` |
+| Auth | None. No key, no token, no cookie is sent. |
+| Shown | 5 products; up to 5 sellers per product |
+| Cache | `torob_cache`, keyed by the normalized query (`search:…`) or the Torob key (`sellers:…`), TTL 10 minutes, errors never cached. A schema change: run `npm run migrate` after deploying. |
+| Timeout | 9 s (raced against the request — the SDK has no documented abort) |
+| Response cap | 6 M characters, checked before parsing (≈12 MB of Persian JSON) |
+
+**What the bot will not do:** retry in a loop, call a second endpoint because the
+first was empty, present a cached answer as live (the footer says
+«ذخیره‌شده از …»), label a Torob price as verified, or blend Torob numbers with
+user reports. A promoted product (`is_adv`) is marked `تبلیغ`; a seller whose
+price Torob flags (`is_price_unreliable`) is marked `قیمت نامعتبر اعلام‌شده`; an
+absent price is `قیمت نامشخص`, never `0`.
+
+**Known caveats, in order of importance:**
+
+1. These are Torob's **undocumented** public JSON endpoints. There is no
+   developer page, no versioning promise and no terms of use for them. They can
+   change or start refusing requests without notice; `UNEXPECTED_SHAPE` is a real
+   outcome, not a theoretical one.
+2. `https://torob.com/robots.txt` disallows `/search/` for crawlers. These calls
+   are user-triggered lookups from the bot, not crawling, and the bot never
+   fetches Torob's HTML; the endpoint is still outside any published contract,
+   so this stays a risk the operator accepts knowingly.
+3. **Runtime egress is unverified.** The payloads in `tests/fixtures/` were
+   captured from this repository's development environment. Whether the
+   Serverless runtime can reach `api.torob.com` has *not* been proven; the first
+   deployed message is the first real test. If it cannot, the user sees
+   «ارتباط با ترب برقرار نشد» and `/catalog` keeps working.
+4. Rate limiting is honour-based: one request per search, an answer from cache
+   where possible, no parallelism, no polling.
+
+If Torob is unreachable, the bot degrades: the error text names the failure and
+points at `/products`. Nothing else in the bot depends on the network.
 
 ---
 
@@ -233,7 +291,7 @@ row, the state transition, and — for moderation — that the presser is in
 | Currency | **Toman only.** A rial amount is rejected, never converted. Every message says تومان. |
 | Format | Whole toman; `4,850,000`, `۴٬۸۵۰٬۰۰۰`, `1.250.000`, `۱.۵ میلیون`, `۲ میلیون و ۳۰۰ هزار` all work. Decimals without a multiplier (`1250.5`), negatives, unsafe integers and text are refused. |
 | Bounds | 1,000 … 100,000,000 toman (`PRICE_LIMITS`). |
-| Product | Must exist and be active; ids appear as `#N` in `/products` and `/search`. |
+| Product | Must exist in the catalog and be active; ids appear as `#N` in `/products` and `/catalog`. |
 | Store | Required, 1–60 characters, stored as typed; a folded key is used only for duplicate detection. |
 | Source URL | Optional, `http(s)`, ≤ 200 characters. **Never fetched.** |
 | Duplicate | Same person + product + price + store within 24 h is refused. |
@@ -274,6 +332,7 @@ moment cannot decide the same report twice.
 | --- | --- |
 | `users` | One row per Telegram account: `tg_id` (UNIQUE, the identity), first name. No username, phone or email. |
 | `products` | Catalog: name, **UNIQUE** normalized name, category, keywords, active flag. |
+| `torob_cache` | Normalized query or product key, raw JSON payload, fetch timestamp. Short-lived; safe to truncate. |
 | `price_reports` | product, user, integer toman, store name + folded store key, source URL, status, review metadata. |
 | `report_flags` | report, user, timestamp — **UNIQUE** per (report, user). |
 
@@ -288,9 +347,14 @@ application code on every write.
 
 ## Limitations
 
-- **No paid price API.** The bot has no source of market data other than people.
-- **No scraping.** It never fetches a shop page; a submitted URL is supporting
-  information a moderator may look at, never proof of a price.
+- **No paid price API, no scraping service, no proxy.** Live prices come from
+  Torob's own public JSON; community prices come from people.
+- **No page scraping.** The bot never downloads or parses a shop's HTML page, and
+  never opens a submitted URL; a URL is supporting information a moderator may
+  look at, never proof of a price.
+- **Torob is an undocumented source.** No contract, no SLA, no support; the
+  search endpoint is disallowed by `robots.txt` for crawlers and is used here for
+  user-triggered lookups only. See *Live search (Torob)* above.
 - **User reports can be outdated or wrong.** That is why they are moderated, why
   a median needs several people, and why age is always shown.
 - **Availability is never guaranteed.** A price means "someone reported paying
@@ -309,7 +373,7 @@ application code on every write.
 ## Tests
 
 ```bash
-npm test        # 123 tests, node:test only — no framework
+npm test        # 160 tests, node:test only — no framework
 npm run check   # parse every deployed module + resolve every import
 ```
 
@@ -367,8 +431,12 @@ After deploying and migrating, in a real Telegram client:
 1. `/start` → welcome text with three menu buttons; the 📦 button opens the catalog.
 2. `/products` → six products, each a button; « بعدی » pages forward, « قبلی » back.
 3. Tap a product → its price page opens *in place*; « فهرست کالاها » returns.
-4. `/search آيفون` and `/search آیفون` → identical results; plain `شارژر` also searches.
-5. `/price 1` and `/product 1` → the same page.
+4. Send `شارژر سامسونگ 25 وات` → results from Torob with prices and shop counts;
+   `/search` with the same words answers the same. Follow « مشاهده در ترب ».
+5. Tap « 🛒 فروشنده‌ها » on a result → the cheapest few shops, each with its price.
+6. `/catalog آيفون` and `/catalog آیفون` → identical results from our own list;
+   `/product 1` → that product's community page (and `/price 1` searches, it does
+   not open the page).
 6. `/report 1 | 4,850,000 | دیجی‌کالا` → confirmation says **در انتظار بررسی**.
 7. Repeat the same line → duplicate refusal.
 8. `/report 1 | 48500000 ریال | دیجی‌کالا` → rial is refused (no conversion).

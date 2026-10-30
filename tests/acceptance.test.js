@@ -43,8 +43,8 @@ test('a user browses, reports, moderates and flags without leaving a broken link
   assert.match(lastText(), /کالاها/);
   assert.equal(buttons().some((button) => button.callback_data.startsWith('product:')), true);
 
-  await app.message(message(A, A, '/search شارژر'));
-  assert.match(lastText(), /نتایج/);
+  await app.message(message(A, A, '/products'));
+  assert.match(lastText(), /کالاها/);
 
   await press('product:1', A);
   assert.match(lastText(), /شارژر USB-C ۲۰ وات/);

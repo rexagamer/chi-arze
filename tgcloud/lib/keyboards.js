@@ -7,6 +7,9 @@
 // *shape*, and the handler still checks that the row exists and that the user may
 // do this (see `handlers/callback_query.js`).
 
+import { isProductKey, productPageUrl } from './torob-parse.js';
+import { TOROB_OPEN_ON_TOROB } from './text.js';
+import { toPersianDigits } from './format.js';
 import { toPositiveInt } from './input.js';
 
 /** Telegram's hard limit on `callback_data`. */
@@ -19,6 +22,7 @@ const CATALOG = 'catalog';
 const PRODUCT = 'product';
 const FLAG = 'flag';
 const MOD = 'mod';
+const TOROB = 'torob';
 
 export function mainMenu() {
   return {
@@ -122,6 +126,12 @@ export function parseCallbackData(data) {
       return id == null ? null : { kind: 'flag', id };
     }
 
+    case TOROB: {
+      if (parts.length !== 3 || action !== 'sellers') return null;
+      if (!isProductKey(argument ?? '')) return null;
+      return { kind: 'torobSellers', prk: argument };
+    }
+
     case MOD: {
       if (parts.length !== 3) return null;
       if (action === 'queue') return { kind: 'queue' };
@@ -144,4 +154,45 @@ function toNonNegativeInt(value) {
   if (value === '0') return 0;
   const parsed = toPositiveInt(value);
   return parsed != null && parsed <= 1000 ? parsed : null;
+}
+
+
+// ── Torob results ────────────────────────────────────────────────────────────
+// Two actions per result: open the product page on torob.com (a plain `url`
+// button — no server round trip, nothing to validate), and look up who sells it
+// (a callback carrying only the product key, which the handler re-validates).
+
+/**
+ * One row per result, numbered to match the message: the sellers button for
+ * that product, then its link. Unnumbered, five identical rows would be a
+ * guessing game — the user cannot tell which one belongs to result 3.
+ * A product with no usable page URL only gets the sellers button, and a list of
+ * rows beyond the URL-button budget is trimmed by the caller, not here.
+ */
+export function torobResultsKeyboard(products) {
+  const rows = [];
+  for (const [index, product] of products.entries()) {
+    const row = [];
+    const label = toPersianDigits(index + 1);
+    if (isProductKey(product.prk)) {
+      row.push({ text: `🛒 فروشنده‌های ${label}`, callback_data: `${TOROB}:sellers:${product.prk}` });
+    }
+    if (product.url) row.push({ text: `مشاهده در ترب ${label}`, url: product.url });
+    if (row.length) rows.push(row);
+  }
+  if (!rows.length) rows.push([{ text: '« کالاهای ما', callback_data: `${CATALOG}:page:0` }]);
+  return { inline_keyboard: rows };
+}
+
+/** The sellers screen: back to the catalog, since the query itself is not stored. */
+export function torobSellersKeyboard(prk) {
+  const rows = [];
+  if (isProductKey(prk)) rows.push([{ text: TOROB_OPEN_ON_TOROB, url: productPageUrl(prk) }]);
+  rows.push([{ text: '« کالاهای ما', callback_data: `${CATALOG}:page:0` }]);
+  return { inline_keyboard: rows };
+}
+
+/** A search-again hint is text, not a button: the user types the next query. */
+export function torobRetryKeyboard() {
+  return { inline_keyboard: [[{ text: '📦 کالاهای ما', callback_data: `${CATALOG}:page:0` }]] };
 }

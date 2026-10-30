@@ -4,7 +4,14 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { readFileSync } from 'node:fs';
+
 import { createTestApp, lastText, message, restoreSchema } from './support/app.mjs';
+
+// The live search paths need an upstream answer; it is scripted per test.
+const SEARCH_FIXTURE = JSON.parse(
+  readFileSync(new URL('./fixtures/torob-search-charger.json', import.meta.url), 'utf8'),
+);
 
 let app;
 let config;
@@ -18,6 +25,7 @@ beforeEach(async () => {
   config.ADMIN_IDS.length = 0;
   config.ADMIN_IDS.push(ADMIN);
   await app.catalog.seedCatalog();
+  app.setFetchHandler(() => ({ body: SEARCH_FIXTURE }));
 });
 
 const send = (text, fromId = USER) => app.message(message(fromId, fromId, text));
@@ -74,20 +82,37 @@ test('/products pages through the catalog and clamps out-of-range pages', async 
   assert.match(lastText(), /صفحهٔ ۱ از ۷/);
 });
 
-test('/search needs a query, refuses an over-long one, and finds nothing honestly', async () => {
+test('/search needs a query, refuses an over-long one, and searches Torob', async () => {
   await send('/search');
   assert.match(lastText(), /عبارت جست‌وجو را بنویسید/);
 
   await send(`/search ${'ش'.repeat(80)}`);
   assert.match(lastText(), /خیلی بلند است/);
 
-  await send('/search یخچال');
+  await send('/search شارژر سامسونگ');
+  assert.match(lastText(), /نتایج «شارژر سامسونگ»/);
+});
+
+test('/catalog searches our own list without touching Torob', async () => {
+  await send('/catalog');
+  assert.match(lastText(), /عبارت جست‌وجو را بنویسید/);
+
+  await send(`/catalog ${'ش'.repeat(80)}`);
+  assert.match(lastText(), /خیلی بلند است/);
+
+  await send('/catalog شارژر');
+  assert.match(lastText(), /نتایج «شارژر»/);
+  assert.match(lastText(), /شارژر USB-C ۲۰ وات/); // a catalog row, not a Torob one
+  assert.equal(app.fetches.length, 0);
+
+  await send('/catalog یخچال');
   assert.match(lastText(), /چیزی پیدا نشد/);
 });
 
 test('plain text is a search; anything that is not text says so', async () => {
   await send('شارژر');
   assert.match(lastText(), /نتایج «شارژر»/);
+  assert.equal(app.fetches.length, 1); // the query went to Torob, not the catalog
 
   await app.message({ message_id: 2, chat: { id: USER, type: 'private' }, from: { id: USER } });
   assert.match(lastText(), /فقط پیام متنی/);
@@ -109,7 +134,7 @@ test('commands work when addressed to the bot (@BotName)', async () => {
   assert.match(lastText(), /راهنما/);
 });
 
-test('/price and /product are the same page', async () => {
+test('/price is a live search, while /product shows the community page', async () => {
   const report = await app.reports.submitReport(
     { id: USER, first_name: 'کاربر' },
     { productId: 1, priceToman: 4_850_000, storeName: 'دیجی‌کالا', sourceUrl: null },
@@ -117,11 +142,13 @@ test('/price and /product are the same page', async () => {
   await app.moderation.approveReport(report.report.id, ADMIN);
 
   await send('/price 1');
-  const viaPrice = lastText();
-  await send('/product 1');
+  assert.match(lastText(), /نتایج «1»/); // echoed exactly as typed, a query like any other
+  assert.equal(app.fetches.length, 1);
 
-  assert.equal(viaPrice, lastText());
-  assert.match(viaPrice, /۴٬۸۵۰٬۰۰۰ تومان/);
+  await send('/product 1');
+  assert.match(lastText(), /شارژر USB-C ۲۰ وات/);
+  assert.match(lastText(), /۴٬۸۵۰٬۰۰۰ تومان/);
+  assert.equal(app.fetches.length, 1); // the community page needs no upstream call
 });
 
 test('/product without a usable id explains what it needs', async () => {

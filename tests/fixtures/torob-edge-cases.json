@@ -1,0 +1,82 @@
+{
+  "_note": "DERIVED, NOT CAPTURED. These are deliberately broken variants of tests/fixtures/torob-search-charger.json, built to exercise the parser's guards. They are not claims about how Torob behaves — an empty search was never observed in real traffic (a nonsense query still returned fuzzy matches), so the empty case is a shape guard, not a reproduction.",
+  "empty": {
+    "results": [],
+    "count": 0,
+    "has_visible_result": false,
+    "spellcheck": { "is_spellchecked": false, "initial_query": "", "corrected_query": "" }
+  },
+  "no_results_key": {
+    "count": 0,
+    "has_visible_result": false
+  },
+  "results_not_an_array": {
+    "results": { "error": "something changed" },
+    "count": 3
+  },
+  "not_an_object": ["results"],
+  "rows_missing_essentials": {
+    "results": [
+      { "random_key": "not-a-uuid", "name1": "شناسهٔ خراب", "price": 1000000 },
+      { "random_key": "d92e497e-52aa-4f6e-ba9e-26664ae2368f", "price": 1000000 },
+      { "random_key": "094bbd4d-5364-44bb-8428-70938dc683d3", "name1": "   ", "price": 2000000 },
+      { "random_key": "864a937e-1cf5-48c1-a64a-20d11537bdd4", "name1": "بدون قیمت", "shop_text": "در ۳ فروشگاه" },
+      null,
+      "a string instead of an object"
+    ],
+    "count": 6
+  },
+  "price_variants": {
+    "results": [
+      { "random_key": "ec705a97-bdcb-4786-86c1-539b1a1361b9", "name1": "قیمت صفر", "price": 0 },
+      { "random_key": "d92e497e-52aa-4f6e-ba9e-26664ae2368f", "name1": "قیمت متنی", "price": "3452000" },
+      { "random_key": "094bbd4d-5364-44bb-8428-70938dc683d3", "name1": "قیمت اعشاری", "price": 347000.4 },
+      { "random_key": "864a937e-1cf5-48c1-a64a-20d11537bdd4", "name1": "قیمت نامعتبر", "price": "cheap" }
+    ]
+  },
+  "shop_text_variants": {
+    "results": [
+      { "random_key": "ec705a97-bdcb-4786-86c1-539b1a1361b9", "name1": "چند فروشگاه", "price": 1000, "shop_text": "در ۷۳۰ فروشگاه" },
+      { "random_key": "d92e497e-52aa-4f6e-ba9e-26664ae2368f", "name1": "یک فروشگاه", "price": 1000, "shop_text": "در ایران تاجیر" },
+      { "random_key": "094bbd4d-5364-44bb-8428-70938dc683d3", "name1": "بدون فروشگاه", "price": 1000, "shop_text": "" },
+      { "random_key": "864a937e-1cf5-48c1-a64a-20d11537bdd4", "name1": "شکل ناشناخته", "price": 1000, "shop_text": "۷۳۰ فروشگاه" }
+    ]
+  },
+  "duplicate_products": {
+    "results": [
+      { "random_key": "d92e497e-52aa-4f6e-ba9e-26664ae2368f", "name1": "یک کالا", "price": 1000, "is_adv": true },
+      { "random_key": "d92e497e-52aa-4f6e-ba9e-26664ae2368f", "name1": "یک کالا", "price": 1000, "is_adv": false }
+    ]
+  },
+  "spellchecked": {
+    "results": [
+      { "random_key": "d92e497e-52aa-4f6e-ba9e-26664ae2368f", "name1": "شارژر سامسونگ", "price": 1388800 }
+    ],
+    "count": 1,
+    "spellcheck": { "is_spellchecked": true, "initial_query": "شارزر", "corrected_query": "شارژر" }
+  },
+  "sellers": {
+    "empty": { "results": [], "count": 0 },
+    "missing_shop_name": {
+      "results": [
+        { "shop_name": "", "price": 1000 },
+        { "price": 2000 },
+        { "shop_name": "فروشگاه واقعی", "price": 3000, "shop_name2": "تهران", "availability": false }
+      ]
+    },
+    "duplicates": {
+      "results": [
+        { "shop_name": "یک فروشگاه", "price": 5000 },
+        { "shop_name": "یک فروشگاه", "price": 5000 },
+        { "shop_name": "یک فروشگاه", "price": 6000 }
+      ]
+    },
+    "prices": {
+      "results": [
+        { "shop_name": "گران", "price": 5000 },
+        { "shop_name": "بی‌قیمت" },
+        { "shop_name": "ارزان", "price": 1000, "is_price_unreliable": true }
+      ]
+    }
+  }
+}
